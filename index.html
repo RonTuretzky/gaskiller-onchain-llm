@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gas Killer · On-chain LLM</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E⛽%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #0b0e14; --panel: #12161f; --panel2: #171c28; --line: #232a3a;
@@ -301,6 +302,10 @@ const C = {
   from: "0x6636A1CCBdf54485067304C1a590DE016DeaD9F0",
   engine: "0x3386985D9A964224D681929F57D8927701E07C14",
   manifest: "0x23216cb9ed9ef2b4bc20c84d27b68fa62ab194fc0845dfa707836f48ec4a7ae9",
+  // The operators simulate against an overlay fork of Sepolia (the Qwen weights are
+  // mounted there as phantom code). The fork is pinned at this block, so tasks must
+  // reference a height it can serve — NOT the live chain head.
+  simBlock: 11252751,
 };
 let model = "stories";
 
@@ -405,14 +410,20 @@ async function send(){
   const key = $("apikey").value.trim();
   addMsg("user", esc(model==="qwen" ? "What is Ethereum?" : prompt));
   if (!key) { addMsg("sys", "no API key — reads only. Paste a gk_… key to submit tasks."); return; }
+  if (!key.startsWith("gk_")) {
+    addMsg("sys", "that doesn't look like an API key (expected <b>gk_…</b>). If you pasted the " +
+      "<i>admin</i> key: it can't trigger tasks — it mints API keys via <code>/admin/keys</code> " +
+      "(not on the public ingress; port-forward the router).");
+    return;
+  }
   $("send").disabled = true;
   const wait = addMsg("sys", "submitting task to the router…");
   try {
-    const [ti, blk] = await Promise.all([transitions(cfg.addr), rpc("eth_blockNumber", [])]);
+    const ti = await transitions(cfg.addr);
     const cd = model==="qwen" ? encAsk(cfg.promptIds, 8) : encTellStory(prompt, 32);
     const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
       transition_index: ti, from_address: C.from, value: "0",
-      block_height: parseInt(blk,16) - 3 }};
+      block_height: C.simBlock }};
     const r = await fetch($("router").value.trim() + "/trigger", { method:"POST",
       headers: {"Content-Type":"application/json", "Authorization":"Bearer "+key},
       body: JSON.stringify(body) });
