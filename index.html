@@ -161,7 +161,7 @@
         <label>API key (gk_…) — needed to submit; reads work without it</label>
         <input class="small" id="apikey" placeholder="gk_…" type="password">
         <label>Sepolia RPC</label>
-        <input class="small" id="rpc" value="https://ethereum-sepolia-rpc.publicnode.com">
+        <input class="small" id="rpc" value="https://sepolia.drpc.org">
         <div class="note" style="margin-top:10px">Reads (history, state) go straight to the chain.
         Submitting a prompt POSTs a task to the router; the operator quorum simulates the
         billion-gas inference off-chain, BLS-signs the single-slot diff, and lands it via
@@ -280,12 +280,21 @@ let model = "stories";
 const $ = id => document.getElementById(id);
 const rpcUrl = () => $("rpc").value.trim();
 const hex = n => "0x" + n.toString(16);
+const RPC_FALLBACKS = ["https://sepolia.drpc.org", "https://sepolia.gateway.tenderly.co", "https://rpc.sepolia.org"];
 async function rpc(method, params) {
-  const r = await fetch(rpcUrl(), { method: "POST", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({jsonrpc:"2.0", id:1, method, params}) });
-  const j = await r.json();
-  if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
-  return j.result;
+  const tried = [rpcUrl(), ...RPC_FALLBACKS.filter(u => u !== rpcUrl())];
+  let lastErr;
+  for (const url of tried) {
+    try {
+      const r = await fetch(url, { method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({jsonrpc:"2.0", id:1, method, params}) });
+      if (!r.ok) { lastErr = new Error(url.replace(/^https?:\/\//,"") + " HTTP " + r.status); continue; }
+      const j = await r.json();
+      if (j.error) { lastErr = new Error(j.error.message || JSON.stringify(j.error)); continue; }
+      return j.result;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("all RPCs failed");
 }
 function tab(t) {
   for (const x of ["chat","lab"]) {
