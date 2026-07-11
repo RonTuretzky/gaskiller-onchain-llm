@@ -302,10 +302,9 @@ const C = {
   from: "0x6636A1CCBdf54485067304C1a590DE016DeaD9F0",
   engine: "0x3386985D9A964224D681929F57D8927701E07C14",
   manifest: "0x23216cb9ed9ef2b4bc20c84d27b68fa62ab194fc0845dfa707836f48ec4a7ae9",
-  // The operators simulate against an overlay fork of Sepolia (the Qwen weights are
-  // mounted there as phantom code). The fork is pinned at this block, so tasks must
-  // reference a height it can serve — NOT the live chain head.
-  simBlock: 11252751,
+  // Simulation routing (gk-sim-proxy): stories traces run against a live archive
+  // RPC, so fresh head-3 heights work. Qwen traces need the overlay fork (weights
+  // mounted as phantom code); its current head is served at <router>/forkhead.
 };
 let model = "stories";
 
@@ -419,11 +418,18 @@ async function send(){
   $("send").disabled = true;
   const wait = addMsg("sys", "submitting task to the router…");
   try {
-    const ti = await transitions(cfg.addr);
+    const [ti, blk] = await Promise.all([transitions(cfg.addr), rpc("eth_blockNumber", [])]);
+    let height = parseInt(blk, 16) - 3;
+    if (model === "qwen") {
+      // Qwen simulates on the overlay fork — the task must reference its head
+      const fh = await fetch($("router").value.trim() + "/forkhead").then(r => r.json());
+      if (!fh.forkHead) throw new Error("overlay fork unreachable (/forkhead)");
+      height = fh.forkHead;
+    }
     const cd = model==="qwen" ? encAsk(cfg.promptIds, 8) : encTellStory(prompt, 32);
     const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
       transition_index: ti, from_address: C.from, value: "0",
-      block_height: C.simBlock }};
+      block_height: height }};
     const r = await fetch($("router").value.trim() + "/trigger", { method:"POST",
       headers: {"Content-Type":"application/json", "Authorization":"Bearer "+key},
       body: JSON.stringify(body) });
