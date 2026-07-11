@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gas Killer · On-chain LLM</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #12161f; --panel2: #171c28; --line: #232a3a;
+    --text: #dbe2f0; --dim: #7d8aa5; --acc: #5eead4; --acc2: #f0abfc;
+    --good: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.55 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; }
+  header { padding: 22px 28px 10px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 21px; letter-spacing: .2px; }
+  h1 .gk { color: var(--acc); }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  .sub a { color: var(--acc); text-decoration: none; }
+  nav { display: flex; gap: 6px; padding: 12px 28px 0; border-bottom: 1px solid var(--line); }
+  nav button { background: none; border: none; color: var(--dim); font-size: 14px;
+               padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav button.on { color: var(--acc); border-bottom-color: var(--acc); }
+  main { max-width: 1060px; margin: 0 auto; padding: 22px 28px 80px; }
+  .tab { display: none; } .tab.on { display: block; }
+
+  /* ---- chat ---- */
+  .row { display: flex; gap: 18px; flex-wrap: wrap; }
+  .col { flex: 1 1 460px; min-width: 380px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          padding: 16px 18px; margin-bottom: 16px; }
+  .card h3 { margin: 0 0 10px; font-size: 14px; color: var(--acc); font-weight: 600;
+             text-transform: uppercase; letter-spacing: .8px; }
+  .modelpick { display: flex; gap: 8px; margin-bottom: 12px; }
+  .modelpick button { flex: 1; background: var(--panel2); color: var(--dim);
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px; cursor: pointer;
+    font-size: 13px; text-align: left; }
+  .modelpick button.on { border-color: var(--acc); color: var(--text); }
+  .modelpick .name { font-weight: 600; font-size: 14px; }
+  .modelpick .meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  #chatlog { min-height: 260px; max-height: 460px; overflow-y: auto; display: flex;
+             flex-direction: column; gap: 10px; padding: 4px 2px; }
+  .msg { max-width: 88%; padding: 10px 14px; border-radius: 12px; font-size: 14px;
+         white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: #1e3a5f; border: 1px solid #29507f; }
+  .msg.bot  { align-self: flex-start; background: var(--panel2); border: 1px solid var(--line); }
+  .msg.sys  { align-self: center; background: none; color: var(--dim); font-size: 12px;
+              border: 1px dashed var(--line); }
+  .msg .tag { display: block; font-size: 10.5px; color: var(--dim); margin-top: 7px;
+              font-family: var(--mono); }
+  .msg .tag a { color: var(--acc); text-decoration: none; }
+  .inbar { display: flex; gap: 8px; margin-top: 12px; }
+  .inbar input[type=text] { flex: 1; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 9px; color: var(--text); padding: 11px 13px; font-size: 14px; }
+  .btn { background: var(--acc); color: #06281f; font-weight: 700; border: none;
+         border-radius: 9px; padding: 11px 18px; cursor: pointer; font-size: 14px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  .kv { font-family: var(--mono); font-size: 12px; color: var(--dim); line-height: 1.9; }
+  .kv b { color: var(--text); font-weight: 500; }
+  .kv .addr { color: var(--acc); }
+  input.small { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); padding: 8px 10px; font-family: var(--mono);
+    font-size: 12px; }
+  label { font-size: 12px; color: var(--dim); display: block; margin: 8px 0 4px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px;
+          font-weight: 600; }
+  .pill.live { background: #12331f; color: var(--good); }
+  .pill.wait { background: #33270f; color: var(--warn); }
+  .story { border-left: 3px solid var(--acc); padding: 8px 12px; margin: 8px 0;
+           background: var(--panel2); border-radius: 0 8px 8px 0; font-size: 13.5px; }
+  .story .m { font-family: var(--mono); font-size: 10.5px; color: var(--dim); margin-top: 5px; }
+  .story .m a { color: var(--acc); text-decoration: none; }
+
+  /* ---- bisection lab ---- */
+  .seg-track { display: flex; gap: 2px; height: 54px; align-items: stretch; margin: 14px 0 6px; }
+  .seg { flex: 1; border-radius: 3px; background: #1d2534; position: relative;
+         transition: all .25s ease; min-width: 3px; }
+  .seg.inwin { background: #24436b; }
+  .seg.mid { outline: 2px solid var(--warn); z-index: 2; }
+  .seg.divergent { background: #6b2430; }
+  .seg.pinned { background: #14532d; }
+  .seg.culprit { background: var(--bad); box-shadow: 0 0 14px #f8717188; }
+  .axis { display: flex; justify-content: space-between; font-family: var(--mono);
+          font-size: 10.5px; color: var(--dim); }
+  .commitrow { display: flex; gap: 2px; margin-top: 3px; }
+  .commit { flex: 1; text-align: center; font-family: var(--mono); font-size: 9px;
+            color: var(--dim); overflow: hidden; white-space: nowrap; min-width: 3px; }
+  .commit.match { color: var(--good); } .commit.differ { color: var(--bad); }
+  #roundlog { font-family: var(--mono); font-size: 12.5px; line-height: 1.85;
+              max-height: 300px; overflow-y: auto; }
+  #roundlog .r { border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 8px; }
+  #roundlog .r.final { border-left-color: var(--bad); }
+  #roundlog .op { color: var(--acc); } #roundlog .ch { color: var(--acc2); }
+  #roundlog .g { color: var(--good); } #roundlog .b { color: var(--bad); }
+  #roundlog .d { color: var(--dim); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 10px; margin-top: 12px; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+          padding: 10px 12px; }
+  .stat .v { font-family: var(--mono); font-size: 17px; color: var(--acc); }
+  .stat .k { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  select { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .note { font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+  .note b { color: var(--text); }
+  code { font-family: var(--mono); font-size: .92em; color: var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="gk">Gas Killer</span> · On-chain LLM</h1>
+  <div class="sub">
+    Transformer inference in pure Solidity, executed by an EigenLayer operator quorum under unbounded simulation, settled on Sepolia as one storage write.
+    <a href="https://github.com/gas-killer/solidity-sdk/pull/56" target="_blank">contracts</a> ·
+    <a href="https://github.com/gas-killer/service/pull/319" target="_blank">service</a> ·
+    <a href="https://github.com/gas-killer/gas-analyzer/pull/168" target="_blank">overlays</a>
+  </div>
+</header>
+<nav>
+  <button id="nav-chat" class="on" onclick="tab('chat')">Chat</button>
+  <button id="nav-lab" onclick="tab('lab')">Bisection Proof Lab</button>
+</nav>
+<main>
+
+<!-- ============================ CHAT ============================ -->
+<section id="tab-chat" class="tab on">
+  <div class="row">
+    <div class="col" style="flex:1.5 1 520px">
+      <div class="card">
+        <div class="modelpick">
+          <button id="pick-stories" class="on" onclick="pickModel('stories')">
+            <span class="name">stories260K <span class="pill live">LIVE</span></span>
+            <div class="meta">Llama-2 · 260K params · weights fully on-chain · ~1.4B gas / 32 tokens</div>
+          </button>
+          <button id="pick-qwen" onclick="pickModel('qwen')">
+            <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
+            <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens</div>
+          </button>
+        </div>
+        <div id="chatlog"></div>
+        <div class="inbar">
+          <input type="text" id="prompt" placeholder="Once upon a time" value="Once upon a time">
+          <button class="btn" id="send" onclick="send()">Ask the chain</button>
+        </div>
+        <div class="note" style="margin-top:8px" id="chat-note"></div>
+      </div>
+      <div class="card">
+        <h3>On-chain history</h3>
+        <div id="history" class="note">loading events from Sepolia…</div>
+      </div>
+    </div>
+    <div class="col" style="flex:1 1 340px">
+      <div class="card">
+        <h3>Connection</h3>
+        <label>Gas Killer router</label>
+        <input class="small" id="router" value="https://testnet.gaskiller.xyz">
+        <label>API key (gk_…) — needed to submit; reads work without it</label>
+        <input class="small" id="apikey" placeholder="gk_…" type="password">
+        <label>Sepolia RPC</label>
+        <input class="small" id="rpc" value="https://ethereum-sepolia-rpc.publicnode.com">
+        <div class="note" style="margin-top:10px">Reads (history, state) go straight to the chain.
+        Submitting a prompt POSTs a task to the router; the operator quorum simulates the
+        billion-gas inference off-chain, BLS-signs the single-slot diff, and lands it via
+        <code>verifyAndUpdate</code>. The answer appears here when the event hits Sepolia.</div>
+      </div>
+      <div class="card">
+        <h3>Contracts (Sepolia)</h3>
+        <div class="kv" id="contracts"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ LAB ============================ -->
+<section id="tab-lab" class="tab">
+  <div class="card">
+    <h3>Bisection proof — disputing a billion-gas inference with log₂(n) hashes</h3>
+    <div class="note">
+      Every Gas Killer result is signed by a quorum, and every honest operator computes a
+      <b>bit-identical</b> integer inference. If a signed result is ever wrong, a challenger
+      doesn't re-execute 1.4B gas on-chain — that's impossible. Instead the execution is
+      checkpointed at every generated token (the commitment chain the contract already
+      maintains), and challenger + defender <b>bisect</b>: compare the midpoint checkpoint,
+      recurse into the half that disagrees, and after ⌈log₂ n⌉ rounds isolate <b>one token's
+      forward pass</b> — small enough to re-execute inside the SP1 slashing guest (or even
+      on-chain for the 260K model). The fraud is proven at the first divergent step; the
+      dishonest party is slashed. This lab simulates the whole game.
+    </div>
+    <div class="controls">
+      <select id="lab-model" onchange="labSetup()">
+        <option value="stories">stories260K · 32 tokens · ~44M gas/token</option>
+        <option value="qwen">Qwen3-0.6B · 8 tokens + 16 prefill · ~28.6B gas/token</option>
+        <option value="big">Qwen3-0.6B long · 64 segments</option>
+      </select>
+      <select id="lab-mode" onchange="labSetup()">
+        <option value="dishonest">defender is dishonest (random fault)</option>
+        <option value="honest">defender is honest (challenge fails)</option>
+      </select>
+      <button class="btn ghost" onclick="labSetup()">Reset</button>
+      <button class="btn" id="lab-step" onclick="labStep()">Bisect one round</button>
+      <button class="btn ghost" id="lab-auto" onclick="labAuto()">Auto-run</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Execution trace — one segment per generated token</h3>
+    <div class="seg-track" id="segtrack"></div>
+    <div class="commitrow" id="commitrow"></div>
+    <div class="axis"><span>token 0 (prompt committed)</span><span id="axis-mid"></span><span id="axis-end"></span></div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="st-total">—</div><div class="k">total execution gas (off-chain)</div></div>
+      <div class="stat"><div class="v" id="st-window">—</div><div class="k">disputed window (segments)</div></div>
+      <div class="stat"><div class="v" id="st-rounds">—</div><div class="k">bisection rounds used / max</div></div>
+      <div class="stat"><div class="v" id="st-onchain">—</div><div class="k">gas to prove the culprit segment</div></div>
+      <div class="stat"><div class="v" id="st-saving">—</div><div class="k">vs naive full re-execution</div></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <h3>Dispute transcript</h3>
+        <div id="roundlog"></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h3>How this maps to Gas Killer</h3>
+        <div class="note">
+          <b>Checkpoints are free.</b> The consumer's story/chat root is already a running
+          keccak commitment; emitting the per-token intermediate roots during simulation
+          costs the operators nothing extra — they're deterministic integer states.<br><br>
+          <b>The pinned environment is part of the claim.</b> Both parties bisect over the
+          same <code>env_commitment</code> — gas limits <i>and</i> the overlay manifest
+          (<code>0x23216c…7ae9</code> for Qwen). A defender who simulated with different
+          weights diverges at segment 0 and is slashed immediately: availability games
+          can't forge the manifest.<br><br>
+          <b>The endgame is tiny.</b> One stories260K token ≈ 44M gas — provable by direct
+          on-chain re-execution. One Qwen token ≈ 28.6B gas — still 50,000× smaller than
+          the naive dispute, and exactly the workload the SP1 guest re-executes to produce
+          a fraud proof bound to <code>chainConfigHash</code>.<br><br>
+          <b>Honest defenders can't lose.</b> Try the honest mode: every midpoint matches,
+          the challenger's window never isolates a divergence, and the challenge bond is
+          forfeited instead.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+/* =================== constants =================== */
+const C = {
+  stories: {
+    addr: "0x6cfae63a4f553cd2b16895277f5bfde5f00e31bc",
+    topic: "0x9ea172bb6cb8c517886fc9d94fce77162d769d09df82ffb34d17f4d39ba7bb60",
+    sel: "0x361e37b1", countSel: "0xf4833e20",
+    fromBlock: 11252000, gasPerTok: 44e6, label: "stories260K",
+    event: "StoryTold",
+  },
+  qwen: {
+    addr: "0x4223fca00ad3feabb59c0d3dec0067f05ee31cf8",
+    topic: "0xdf3af7850be38484a8b851d193f88f555926412ce060ade688d461e34957061b",
+    sel: "0xdf5b7e31", countSel: "0xf4833e20",
+    fromBlock: 11253000, gasPerTok: 28.6e9, label: "Qwen3-0.6B",
+    event: "ChatAnswered",
+    // "What is Ethereum?" chat-template ids (tokenized off-chain; ids are the task input)
+    promptIds: [151644,872,198,3838,374,33946,30,151645,198,151644,77091,198,151667,271,151668,271],
+  },
+  from: "0x6636A1CCBdf54485067304C1a590DE016DeaD9F0",
+  engine: "0x3386985D9A964224D681929F57D8927701E07C14",
+  manifest: "0x23216cb9ed9ef2b4bc20c84d27b68fa62ab194fc0845dfa707836f48ec4a7ae9",
+};
+let model = "stories";
+
+/* =================== tiny helpers =================== */
+const $ = id => document.getElementById(id);
+const rpcUrl = () => $("rpc").value.trim();
+const hex = n => "0x" + n.toString(16);
+async function rpc(method, params) {
+  const r = await fetch(rpcUrl(), { method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({jsonrpc:"2.0", id:1, method, params}) });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+  return j.result;
+}
+function tab(t) {
+  for (const x of ["chat","lab"]) {
+    $("tab-"+x).classList.toggle("on", x===t);
+    $("nav-"+x).classList.toggle("on", x===t);
+  }
+}
+function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+
+/* ---- minimal ABI decoding (enough for our two events) ---- */
+function word(data, i){ return data.slice(2 + i*64, 2 + (i+1)*64); }
+function wNum(data, i){ return parseInt(word(data, i), 16); }
+function decStringAt(data, byteOff){
+  const i = byteOff/32, len = wNum(data, i);
+  const hexs = data.slice(2 + (i+1)*64, 2 + (i+1)*64 + len*2);
+  const bytes = new Uint8Array(len);
+  for (let k=0;k<len;k++) bytes[k]=parseInt(hexs.substr(k*2,2),16);
+  return new TextDecoder().decode(bytes);
+}
+function decUintArrAt(data, byteOff){
+  const i = byteOff/32, len = wNum(data, i), out=[];
+  for (let k=0;k<len;k++) out.push(wNum(data, i+1+k));
+  return out;
+}
+// StoryTold data: (string prompt, string story, uint16[] tokens)
+function decodeStoryTold(data){
+  return { prompt: decStringAt(data, wNum(data,0)), text: decStringAt(data, wNum(data,1)),
+           tokens: decUintArrAt(data, wNum(data,2)) };
+}
+// ChatAnswered data: (uint32[] promptIds, string answer, uint32[] answerIds)
+function decodeChatAnswered(data){
+  return { promptIds: decUintArrAt(data, wNum(data,0)), text: decStringAt(data, wNum(data,1)),
+           tokens: decUintArrAt(data, wNum(data,2)) };
+}
+/* ---- minimal ABI encoding for tellStory(string,uint256) ---- */
+function encTellStory(prompt, maxNew){
+  const b = new TextEncoder().encode(prompt);
+  let hx = ""; b.forEach(x => hx += x.toString(16).padStart(2,"0"));
+  const padded = hx.padEnd(Math.ceil(hx.length/64)*64 || 64, "0");
+  const w = n => n.toString(16).padStart(64,"0");
+  return C.stories.sel + w(64) + w(maxNew) + w(b.length) + padded;
+}
+function encAsk(ids, maxNew){
+  const w = n => n.toString(16).padStart(64,"0");
+  let s = C.qwen.sel + w(64) + w(maxNew) + w(ids.length);
+  ids.forEach(x => s += w(x));
+  return s;
+}
+function calldataBytes(cd){
+  const out=[]; for(let i=2;i<cd.length;i+=2) out.push(parseInt(cd.substr(i,2),16));
+  return out;
+}
+
+/* =================== chat =================== */
+function pickModel(m){
+  model = m;
+  $("pick-stories").classList.toggle("on", m==="stories");
+  $("pick-qwen").classList.toggle("on", m==="qwen");
+  $("prompt").value = m==="stories" ? "Once upon a time" : "What is Ethereum?";
+  $("prompt").disabled = (m==="qwen");
+  $("chat-note").innerHTML = m==="qwen"
+    ? "Qwen prompts are tokenized off-chain (byte-level BPE + chat template); this page ships the ids for <b>“What is Ethereum?”</b>. The answer text is decoded fully on-chain."
+    : "stories260K tokenizes fully on-chain — type anything. Greedy decoding: same prompt ⇒ same story, verifiable by every operator.";
+  loadHistory();
+}
+function addMsg(cls, html){
+  const d = document.createElement("div");
+  d.className = "msg "+cls; d.innerHTML = html;
+  $("chatlog").appendChild(d);
+  $("chatlog").scrollTop = 1e9;
+  return d;
+}
+async function transitions(addr){
+  const r = await rpc("eth_call", [{to: addr, data: C.stories.countSel}, "latest"]);
+  return parseInt(r, 16);
+}
+async function send(){
+  const cfg = C[model];
+  const prompt = $("prompt").value.trim() || "Once upon a time";
+  const key = $("apikey").value.trim();
+  addMsg("user", esc(model==="qwen" ? "What is Ethereum?" : prompt));
+  if (!key) { addMsg("sys", "no API key — reads only. Paste a gk_… key to submit tasks."); return; }
+  $("send").disabled = true;
+  const wait = addMsg("sys", "submitting task to the router…");
+  try {
+    const [ti, blk] = await Promise.all([transitions(cfg.addr), rpc("eth_blockNumber", [])]);
+    const cd = model==="qwen" ? encAsk(cfg.promptIds, 8) : encTellStory(prompt, 32);
+    const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
+      transition_index: ti, from_address: C.from, value: "0",
+      block_height: parseInt(blk,16) - 3 }};
+    const r = await fetch($("router").value.trim() + "/trigger", { method:"POST",
+      headers: {"Content-Type":"application/json", "Authorization":"Bearer "+key},
+      body: JSON.stringify(body) });
+    const jt = await r.text();
+    if (!r.ok) throw new Error("router " + r.status + ": " + jt);
+    wait.innerHTML = "task queued ✓ — operators are running the transformer ("
+      + (model==="qwen" ? "~545B gas, minutes" : "~1.4B gas, ~30s") + ")… polling the chain";
+    // poll for the transition
+    const t0 = Date.now(), deadline = model==="qwen" ? 45*60e3 : 6*60e3;
+    while (Date.now() - t0 < deadline) {
+      await new Promise(s => setTimeout(s, 10e3));
+      const now = await transitions(cfg.addr);
+      if (now > ti) { wait.remove(); await loadHistory(true); $("send").disabled=false; return; }
+      wait.innerHTML = "quorum working… " + Math.round((Date.now()-t0)/1000) + "s";
+    }
+    wait.innerHTML = "still pending after the window — check operator logs.";
+  } catch(e) {
+    wait.innerHTML = "✗ " + esc(String(e.message||e)) +
+      (String(e).includes("Failed to fetch") ? " — likely CORS on the router; use curl or a proxy." : "");
+  }
+  $("send").disabled = false;
+}
+async function loadHistory(announceNew){
+  const cfg = C[model];
+  try {
+    const logs = await rpc("eth_getLogs", [{ address: cfg.addr, fromBlock: hex(cfg.fromBlock),
+      toBlock: "latest", topics: [cfg.topic] }]);
+    if (!logs.length) { $("history").innerHTML = "no on-chain answers yet for "+cfg.label+"."; return; }
+    let html = "";
+    for (const lg of logs.slice(-12).reverse()) {
+      const d = model==="qwen" ? decodeChatAnswered(lg.data) : decodeStoryTold(lg.data);
+      const q = model==="qwen" ? "What is Ethereum?" : d.prompt;
+      html += `<div class="story"><b>${esc(q)}</b><br>${esc(d.text)}
+        <div class="m">${d.tokens.length} tokens · quorum-signed ·
+        <a target="_blank" href="https://sepolia.etherscan.io/tx/${lg.transactionHash}">verifyAndUpdate ↗</a>
+        · block ${parseInt(lg.blockNumber,16)}</div></div>`;
+    }
+    $("history").innerHTML = html;
+    if (announceNew) {
+      const lg = logs[logs.length-1];
+      const d = model==="qwen" ? decodeChatAnswered(lg.data) : decodeStoryTold(lg.data);
+      addMsg("bot", esc(d.text) + `<span class="tag">signed by the operator quorum ·
+        <a target="_blank" href="https://sepolia.etherscan.io/tx/${lg.transactionHash}">tx ↗</a></span>`);
+    }
+  } catch(e) { $("history").innerHTML = "history unavailable: " + esc(String(e.message||e)); }
+}
+async function initChat(){
+  $("contracts").innerHTML =
+    `<b>stories260K</b> consumer <span class="addr">${C.stories.addr}</span><br>` +
+    `<b>Qwen3-0.6B</b> consumer <span class="addr">${C.qwen.addr}</span><br>` +
+    `shared engine <span class="addr">${C.engine.toLowerCase()}</span><br>` +
+    `overlay manifest <span class="addr">${C.manifest.slice(0,20)}…</span><br>` +
+    `<a target="_blank" style="color:var(--acc)" href="https://github.com/gas-killer/solidity-sdk/releases/tag/qwen3-0.6b-onchain-v1">pinned weight artifacts ↗</a>`;
+  pickModel("stories");
+  try {
+    const t = await transitions(C.qwen.addr);
+    $("qwen-pill").textContent = t > 0 ? "LIVE" : "AWAITING OPERATORS";
+    $("qwen-pill").className = "pill " + (t > 0 ? "live" : "wait");
+  } catch(e){ $("qwen-pill").textContent = "OFFLINE"; }
+}
+
+/* =================== bisection lab =================== */
+// deterministic toy hash for simulated commitments (NOT keccak — visual only)
+function toyHash(s){
+  let h1=0x9e3779b9|0, h2=0x85ebca6b|0;
+  for (let i=0;i<s.length;i++){ const c=s.charCodeAt(i);
+    h1=Math.imul(h1^c,2654435761); h2=Math.imul(h2^c,1597334677); }
+  return (h1>>>0).toString(16).padStart(8,"0")+(h2>>>0).toString(16).padStart(8,"0");
+}
+let L = null;
+function labSetup(){
+  const m = $("lab-model").value, mode = $("lab-mode").value;
+  const n = m==="big" ? 64 : (m==="qwen" ? 24 : 32);
+  const gasPer = m==="stories" ? 44e6 : 28.6e9;
+  const honest = mode==="honest";
+  const fault = honest ? -1 : 1 + Math.floor(Math.random()*(n-1));
+  // honest commitment chain
+  const good = ["genesis"]; for (let i=1;i<=n;i++) good.push(toyHash(good[i-1]+"|tok"+i));
+  // defender's (possibly corrupted from `fault` onward)
+  const claim = good.slice();
+  if (!honest) for (let i=fault;i<=n;i++) claim[i] = toyHash((i===fault?"FAULT":"")+claim[i-1]+"|tok"+i+"x");
+  L = { n, gasPer, honest, fault, good, claim, lo:0, hi:n, rounds:0,
+        maxRounds: Math.ceil(Math.log2(n)), done:false, log:[] };
+  const gp = gasPer>=1e9 ? (gasPer/1e9).toFixed(1)+"B" : (gasPer/1e6).toFixed(0)+"M";
+  labLog(`<span class="d">new dispute · ${n} segments · ~${gp} gas each · defender ${honest?"HONEST":"faulty (segment hidden)"}</span>`);
+  labLog(`<span class="ch">challenger</span>: “final root <b>${(honest?"0x"+L.good[n]:"0x"+L.good[n]).slice(0,12)}…</b> ≠ your signed <b>0x${L.claim[n].slice(0,10)}…</b>”` +
+         (honest ? ` <span class="d">(the challenger is wrong)</span>` : ""));
+  labRender();
+}
+function labLog(html, final){ L.log.push({html, final});
+  $("roundlog").innerHTML = L.log.map(x=>`<div class="r ${x.final?"final":""}">${x.html}</div>`).join("");
+  $("roundlog").scrollTop = 1e9;
+}
+function labStep(){
+  if (!L || L.done) return;
+  const {lo, hi} = L;
+  if (hi - lo <= 1) { labFinish(); return; }
+  const mid = Math.floor((lo+hi)/2);
+  L.rounds++;
+  const agree = L.claim[mid] === L.good[mid];
+  labLog(`<b>round ${L.rounds}</b> · window [${lo}, ${hi}] · probe checkpoint <b>#${mid}</b><br>` +
+    `<span class="op">defender</span> posts 0x${L.claim[mid].slice(0,12)}… · ` +
+    `<span class="ch">challenger</span> computes 0x${L.good[mid].slice(0,12)}… → ` +
+    (agree ? `<span class="g">MATCH — fault is right of #${mid}</span>`
+           : `<span class="b">DIFFER — fault is at or left of #${mid}</span>`));
+  if (agree) L.lo = mid; else L.hi = mid;
+  if (L.hi - L.lo <= 1) labFinish();
+  labRender();
+}
+function labFinish(){
+  L.done = true;
+  if (L.honest) {
+    labLog(`<span class="g">window closed on segment ${L.hi} — re-execution matches the defender's claim. ` +
+      `Challenge fails; the challenger's bond is slashed. Honest operators cannot lose this game.</span>`, true);
+  } else {
+    const seg = L.hi;
+    labLog(`<span class="b">isolated segment #${seg}</span> — checkpoint #${seg-1} agreed, #${seg} differs. ` +
+      `One token's forward pass (~${fmtGas(L.gasPer)}) is re-executed in the SP1 guest under the pinned ` +
+      `<code>env_commitment</code> → the defender's claim is disproven → <b>slashed</b>. ` +
+      `Total dispute cost: ${L.rounds} checkpoint comparisons + one segment, ` +
+      `<b>${(L.n*L.gasPer/L.gasPer/1).toFixed(0)}×</b>… make that <b>${L.n}×</b> less compute than naive re-execution.`, true);
+  }
+  labRender();
+}
+async function labAuto(){
+  if (!L || L.done) labSetup();
+  while (!L.done) { labStep(); await new Promise(s=>setTimeout(s, 650)); }
+}
+function fmtGas(g){ return g>=1e9 ? (g/1e9).toFixed(1)+"B gas" : (g/1e6).toFixed(0)+"M gas"; }
+function labRender(){
+  const t = $("segtrack"), c = $("commitrow");
+  t.innerHTML = ""; c.innerHTML = "";
+  for (let i=1;i<=L.n;i++){
+    const s = document.createElement("div"); s.className = "seg";
+    if (i > L.lo && i <= L.hi) s.classList.add("inwin");
+    if (i <= L.lo) s.classList.add("pinned");
+    if (!L.honest && L.done && i === L.hi) s.classList.add("culprit");
+    if (!L.honest && i >= L.fault && !L.done) s.classList.add("divergent");
+    s.title = `segment ${i} · ~${fmtGas(L.gasPer)}`;
+    t.appendChild(s);
+    const cm = document.createElement("div");
+    cm.className = "commit " + (L.claim[i]===L.good[i] ? "match" : "differ");
+    cm.textContent = L.n <= 40 ? L.claim[i].slice(0,4) : "";
+    c.appendChild(cm);
+  }
+  $("axis-mid").textContent = `window [${L.lo}, ${L.hi}]`;
+  $("axis-end").textContent = `token ${L.n}`;
+  $("st-total").textContent = fmtGas(L.n * L.gasPer);
+  $("st-window").textContent = (L.hi - L.lo) + " / " + L.n;
+  $("st-rounds").textContent = L.rounds + " / " + L.maxRounds;
+  $("st-onchain").textContent = L.done && !L.honest ? fmtGas(L.gasPer) : "—";
+  $("st-saving").textContent = L.done && !L.honest ? L.n + "× less compute" : "—";
+}
+
+/* =================== boot =================== */
+initChat();
+labSetup();
+</script>
+</body>
+</html>
