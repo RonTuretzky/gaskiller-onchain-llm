@@ -108,6 +108,20 @@
   .note { font-size: 12.5px; color: var(--dim); line-height: 1.6; }
   .note b { color: var(--text); }
   code { font-family: var(--mono); font-size: .92em; color: var(--acc); }
+  /* round-in-progress card */
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--acc);
+    border-top-color: transparent; border-radius:50%; animation: rot 0.9s linear infinite;
+    vertical-align:-2px; margin-right:7px; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .pbar { height:6px; background:#1a2030; border-radius:4px; overflow:hidden; margin:10px 0 6px; }
+  .pbar > div { height:100%; background:var(--acc); border-radius:4px; transition:width 2s linear; }
+  .pbar.indet > div { animation: slide 2.2s ease-in-out infinite; width:30% !important; }
+  @keyframes slide { 0%{margin-left:-30%} 100%{margin-left:100%} }
+  .hdot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;
+    background:#555; vertical-align:0; }
+  .hdot.up { background: var(--good); } .hdot.down { background: #c33; }
+  .stagerow { font-size:12px; color:var(--dim); margin-top:4px; }
+  .stagerow b.now { color: var(--acc); }
 </style>
 </head>
 <body>
@@ -147,6 +161,20 @@
           <button class="btn" id="send" onclick="send()">Ask the chain</button>
         </div>
         <div class="note" style="margin-top:8px" id="chat-note"></div>
+      </div>
+      <div class="card" id="roundcard" style="display:none">
+        <h3><span class="spin"></span>Round in progress — <span id="rc-model"></span></h3>
+        <div class="pbar" id="rc-pbar"><div id="rc-fill" style="width:2%"></div></div>
+        <div class="stagerow" id="rc-stages"></div>
+        <div class="note" style="margin-top:8px">
+          <span class="hdot" id="rc-health"></span><span id="rc-healthtext">checking router…</span>
+          &nbsp;·&nbsp; elapsed <b id="rc-elapsed">0s</b> <span id="rc-expect"></span><br>
+          The router has no public task-status API, so progress is read <b>trustlessly from the
+          chain</b>: this page polls <code>stateTransitionCount()</code> until the quorum's
+          <code>verifyAndUpdate</code> lands, and the health dot polls the router's
+          <code>/healthz</code>. Survives reloads — come back any time.
+          <a href="#" onclick="dismissRound();return false" style="color:var(--dim)">dismiss</a>
+        </div>
       </div>
       <div class="card">
         <h3>On-chain history</h3>
@@ -390,22 +418,92 @@ async function send(){
       body: JSON.stringify(body) });
     const jt = await r.text();
     if (!r.ok) throw new Error("router " + r.status + ": " + jt);
-    wait.innerHTML = "task queued ✓ — operators are running the transformer ("
-      + (model==="qwen" ? "~545B gas, minutes" : "~1.4B gas, ~30s") + ")… polling the chain";
-    // poll for the transition
-    const t0 = Date.now(), deadline = model==="qwen" ? 45*60e3 : 6*60e3;
-    while (Date.now() - t0 < deadline) {
-      await new Promise(s => setTimeout(s, 10e3));
-      const now = await transitions(cfg.addr);
-      if (now > ti) { wait.remove(); await loadHistory(true); $("send").disabled=false; return; }
-      wait.innerHTML = "quorum working… " + Math.round((Date.now()-t0)/1000) + "s";
-    }
-    wait.innerHTML = "still pending after the window — check operator logs.";
+    wait.innerHTML = "task queued ✓ — watch the <b>Round in progress</b> card; the answer posts here when it settles.";
+    startRound({ model, ti, t0: Date.now() });
   } catch(e) {
     wait.innerHTML = "✗ " + esc(String(e.message||e)) +
       (String(e).includes("Failed to fetch") ? " — likely CORS on the router; use curl or a proxy." : "");
   }
   $("send").disabled = false;
+}
+
+/* =================== round watcher (persistent processing indicator) =================== */
+// No public task-status endpoint on the router, so the ground truth is the chain:
+// a round is done exactly when stateTransitionCount() passes the count at submission.
+// Expected wall-clock per round, from measured operator traces (stories ~30s; the
+// Qwen 545B-gas trace runs ~25-50min on the shared fork).
+const ROUND_EXPECT = { stories: 60e3, qwen: 50*60e3 };
+const ROUND_MAX    = { stories: 10*60e3, qwen: 90*60e3 };
+let watchTimer = null, healthTimer = null;
+
+function roundState(){ try { return JSON.parse(localStorage.getItem("gk-round")); } catch(e){ return null; } }
+function startRound(st){ localStorage.setItem("gk-round", JSON.stringify(st)); watchRound(); }
+function dismissRound(){ localStorage.removeItem("gk-round"); stopWatch(); }
+function stopWatch(){
+  clearInterval(watchTimer); clearInterval(healthTimer); watchTimer = healthTimer = null;
+  $("roundcard").style.display = "none";
+}
+function fmtDur(ms){
+  const s = Math.floor(ms/1000);
+  return s < 90 ? s+"s" : Math.floor(s/60)+"m "+(s%60)+"s";
+}
+function paintStages(frac, done){
+  const stages = ["task queued", "operators simulating", "quorum signing", "settled on-chain"];
+  // stage estimate: simulation dominates the round; signing+settle is the last sliver
+  const now = done ? 3 : frac < 0.04 ? 0 : frac < 0.93 ? 1 : 2;
+  $("rc-stages").innerHTML = stages.map((s,i) =>
+    (i < now ? "✓ " + s : i === now ? "<b class='now'>▸ " + s + "</b>" : "· " + s)
+  ).join(" &nbsp;→&nbsp; ");
+}
+async function pollHealth(){
+  try {
+    const r = await fetch($("router").value.trim() + "/healthz", { method: "GET" });
+    $("rc-health").className = "hdot " + (r.ok ? "up" : "down");
+    $("rc-healthtext").textContent = r.ok ? "router live" : "router unhealthy (HTTP "+r.status+")";
+  } catch(e) {
+    $("rc-health").className = "hdot down";
+    $("rc-healthtext").textContent = "router unreachable";
+  }
+}
+function watchRound(){
+  const st = roundState();
+  if (!st) return;
+  stopWatch();
+  const cfg = C[st.model];
+  $("roundcard").style.display = "";
+  $("rc-model").textContent = cfg.label;
+  $("rc-expect").textContent = "· expect ~" + fmtDur(ROUND_EXPECT[st.model]);
+  pollHealth(); healthTimer = setInterval(pollHealth, 30e3);
+  let busy = false;
+  const tick = async () => {
+    const el = Date.now() - st.t0;
+    $("rc-elapsed").textContent = fmtDur(el);
+    // creep toward 93% over the expected duration, then hold (indeterminate tail)
+    const frac = Math.min(0.93, 0.02 + 0.91 * el / ROUND_EXPECT[st.model]);
+    $("rc-fill").style.width = (frac*100).toFixed(1) + "%";
+    $("rc-pbar").classList.toggle("indet", el > ROUND_EXPECT[st.model]);
+    paintStages(frac, false);
+    if (busy || el % 12e3 > 3e3) return;   // chain poll every ~12s, timer every 3s
+    busy = true;
+    try {
+      const now = await transitions(cfg.addr);
+      if (now > st.ti) {
+        paintStages(1, true);
+        $("rc-fill").style.width = "100%"; $("rc-pbar").classList.remove("indet");
+        dismissRound();
+        if (model !== st.model) pickModel(st.model);
+        await loadHistory(true);
+        initChat();
+        return;
+      }
+      if (el > ROUND_MAX[st.model]) {
+        $("rc-healthtext").textContent = "round exceeded the "+fmtDur(ROUND_MAX[st.model])+" window — likely timed out";
+        clearInterval(watchTimer);
+      }
+    } catch(e) { /* transient RPC failure; next tick retries */ }
+    busy = false;
+  };
+  watchTimer = setInterval(tick, 3e3); tick();
 }
 async function loadHistory(announceNew){
   const cfg = C[model];
@@ -542,6 +640,7 @@ function labRender(){
 /* =================== boot =================== */
 initChat();
 labSetup();
+watchRound();   // resume the processing indicator if a round was pending across a reload
 </script>
 </body>
 </html>
