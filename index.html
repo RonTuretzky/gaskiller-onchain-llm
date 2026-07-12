@@ -173,7 +173,6 @@
         <div id="chatlog"></div>
         <div class="inbar">
           <input type="text" id="prompt" placeholder="Once upon a time" value="Once upon a time">
-          <select id="qwenprompt" style="display:none"></select>
           <button class="btn" id="send" onclick="send()">Ask the chain</button>
         </div>
         <div class="note" style="margin-top:8px" id="chat-note"></div>
@@ -312,16 +311,9 @@ const C = {
     sel: "0xdf5b7e31", countSel: "0xf4833e20",
     fromBlock: 11253000, gasPerTok: 28.6e9, label: "Qwen3-0.6B",
     event: "ChatAnswered",
-    // Qwen tokenizes off-chain (byte-BPE + chat template) — the contract takes ids,
-    // not text, so prompts are preset. ids = <|im_start|>user\n Q <|im_end|>\n
-    // <|im_start|>assistant\n <think>\n\n</think>\n\n (verified vs the live run).
-    presets: [
-      {q:"What is Ethereum?",        ids:[151644,872,198,3838,374,33946,30,151645,198,151644,77091,198,151667,271,151668,271]},
-      {q:"What is a blockchain?",    ids:[151644,872,198,3838,374,264,17944,30,151645,198,151644,77091,198,151667,271,151668,271]},
-      {q:"Who created Bitcoin?",     ids:[151644,872,198,15191,3465,13127,30,151645,198,151644,77091,198,151667,271,151668,271]},
-      {q:"What is a smart contract?",ids:[151644,872,198,3838,374,264,7785,5116,30,151645,198,151644,77091,198,151667,271,151668,271]},
-      {q:"Why is the sky blue?",     ids:[151644,872,198,10234,374,279,12884,6303,30,151645,198,151644,77091,198,151667,271,151668,271]},
-    ],
+    // Qwen questions are tokenized in-browser (qwen-bpe.js) into the chat
+    // template <|im_start|>user\n Q <|im_end|>\n <|im_start|>assistant\n
+    // <think>\n\n</think>\n\n — the contract receives raw token ids.
   },
   from: "0x6636A1CCBdf54485067304C1a590DE016DeaD9F0",
   engine: "0x3386985D9A964224D681929F57D8927701E07C14",
@@ -416,34 +408,20 @@ function pickModel(m){
   model = m;
   $("pick-stories").classList.toggle("on", m==="stories");
   $("pick-qwen").classList.toggle("on", m==="qwen");
-  const qp = $("qwenprompt");
   if (m === "qwen") {
-    if (!qp.options.length) {
-      C.qwen.presets.forEach((p,i) => qp.add(new Option(p.q, i)));
-      qp.add(new Option("✍️ Custom question…", "custom"));
-      qp.onchange = () => {
-        const custom = qp.value === "custom";
-        $("prompt").style.display = custom ? "" : "none";
-        if (custom) {
-          $("prompt").value = ""; $("prompt").placeholder = "Ask Qwen anything…";
-          $("prompt").focus();
-          ensureTokenizer();
-        }
-      };
-    }
-    qp.style.display = ""; qp.style.flex = "1";
-    qp.onchange();
+    $("prompt").placeholder = "Ask Qwen anything…";
+    $("prompt").value = "What is Ethereum?";
+    ensureTokenizer().then(() => loadHistory());   // decode question texts once ready
   } else {
-    qp.style.display = "none";
-    $("prompt").style.display = "";
     $("prompt").placeholder = "Once upon a time";
     $("prompt").value = "Once upon a time";
   }
   $("chat-note").innerHTML = m==="qwen"
-    ? "Pick a preset or write your own question — custom prompts are tokenized <b>in your browser</b> " +
-      "(same byte-level BPE as the model, verified token-for-token vs HuggingFace) and the contract " +
-      "receives raw token ids. The answer text is decoded fully on-chain. <b>≈40 min per answer</b>: " +
-      "the quorum runs ~545B gas of transformer per reply."
+    ? "Ask anything — your question is tokenized <b>in your browser</b> (same byte-level BPE as the " +
+      "model, verified token-for-token vs HuggingFace) and the contract receives raw token ids; the " +
+      "answer text is decoded fully on-chain. <b>≈40 min per answer, and answers are capped at 8 " +
+      "tokens</b> (~a short sentence): each token costs the operator quorum ~28.6B gas of transformer, " +
+      "so one round buys a headline, not an essay."
     : "stories260K tokenizes fully on-chain — type anything. Greedy decoding: same prompt ⇒ same story, " +
       "verifiable by every operator. Settles in ~1 min. (It only speaks children's-story — it's the " +
       "mechanism demo; use Qwen for real questions.)";
@@ -464,30 +442,24 @@ async function send(){
   const cfg = C[model];
   const prompt = $("prompt").value.trim() || "Once upon a time";
   const key = $("apikey").value.trim();
-  // resolve the Qwen prompt: preset ids, or tokenize the custom question in-browser
+  // tokenize the Qwen question in-browser
   let qwenIds = null, qwenText = null;
   if (model === "qwen") {
-    const qp = $("qwenprompt");
-    if (qp.value === "custom") {
-      qwenText = $("prompt").value.trim();
-      if (!qwenText) { addMsg("sys", "type a question first."); return; }
-      const busy = addMsg("sys", "tokenizing in your browser…");
-      try {
-        await ensureTokenizer();
-        const qIds = QwenBPE.encode(qwenText);
-        if (qIds.length > 48) {
-          busy.innerHTML = "that question is <b>" + qIds.length + " tokens</b> — keep it ≤48 " +
-            "(every prompt token costs the operators ~1.5B gas of prefill).";
-          return;
-        }
-        qwenIds = QwenBPE.chatIds(qwenText);
-        busy.innerHTML = "tokenized ✓ " + qIds.length + " question tokens · round-trip check: “" +
-          esc(QwenBPE.decode(qIds)) + "”";
-      } catch(e) { busy.innerHTML = "✗ tokenizer: " + esc(String(e.message||e)); return; }
-    } else {
-      const p = C.qwen.presets[+qp.value];
-      qwenText = p.q; qwenIds = p.ids;
-    }
+    qwenText = $("prompt").value.trim();
+    if (!qwenText) { addMsg("sys", "type a question first."); return; }
+    const busy = addMsg("sys", "tokenizing in your browser…");
+    try {
+      await ensureTokenizer();
+      const qIds = QwenBPE.encode(qwenText);
+      if (qIds.length > 48) {
+        busy.innerHTML = "that question is <b>" + qIds.length + " tokens</b> — keep it ≤48 " +
+          "(every prompt token costs the operators ~1.5B gas of prefill).";
+        return;
+      }
+      qwenIds = QwenBPE.chatIds(qwenText);
+      busy.innerHTML = "tokenized ✓ " + qIds.length + " question tokens · round-trip check: “" +
+        esc(QwenBPE.decode(qIds)) + "”";
+    } catch(e) { busy.innerHTML = "✗ tokenizer: " + esc(String(e.message||e)); return; }
   }
   addMsg("user", esc(model==="qwen" ? qwenText : prompt));
   if (!key) { addMsg("sys", "no API key — reads only. Paste a gk_… key to submit tasks."); return; }
@@ -604,16 +576,13 @@ function watchRound(){
   };
   watchTimer = setInterval(tick, 3e3); tick();
 }
-// Recover the question text from a ChatAnswered event's prompt ids: exact
-// preset match first, full BPE decode if the tokenizer is loaded, count otherwise.
+// Recover the question text from a ChatAnswered event's prompt ids via BPE
+// decode (the tokenizer loads whenever Qwen mode is active).
 function qwenQuestion(promptIds){
-  const key = JSON.stringify(promptIds);
-  const preset = C.qwen.presets.find(p => JSON.stringify(p.ids) === key);
-  if (preset) return preset.q;
   const im_end = promptIds.indexOf(151645);
   const qIds = promptIds.slice(3, im_end < 0 ? undefined : im_end);
   if (QwenBPE.ready()) { try { return QwenBPE.decode(qIds); } catch(e){} }
-  return "(custom question · " + qIds.length + " tokens)";
+  return "(question · " + qIds.length + " tokens)";
 }
 async function loadHistory(announceNew){
   const cfg = C[model];
