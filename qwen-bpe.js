@@ -2,9 +2,19 @@
  * pretokenize (GPT-2-style regex) -> byte-to-unicode -> greedy lowest-rank
  * merges -> vocab lookup. Verified token-for-token against the HuggingFace
  * tokenizer on a 30-case corpus (ASCII, unicode, emoji, contractions,
- * whitespace edge cases). Loads vocab+merges lazily from qwen-tokenizer.json.
+ * whitespace edge cases).
+ *
+ * createQwenBPE({tokenizerUrl, scaffold}) builds one BPE instance scoped to
+ * a single model's vocab + chat-template scaffold, so the 0.6B and 35B
+ * tokenizers can be lazy-loaded independently without clobbering each
+ * other's state. `scaffold` supplies the chat-template token ids
+ * (`prefix`/`suffix` wrapped around the encoded question) and the `special`
+ * id->string map used by decode() — both differ between the 0.6B and 35B
+ * vocabularies (different <|im_start|>/<|im_end|>/<think>/</think> ids).
  */
-const QwenBPE = (() => {
+function createQwenBPE(opts) {
+  opts = opts || {};
+  const scaffold = opts.scaffold;
   let vocab = null, ranks = null, byteEnc = null, byteDec = null, idToTok = null;
   const cache = new Map();
 
@@ -31,7 +41,7 @@ const QwenBPE = (() => {
 
   async function load(url) {
     if (vocab) return;
-    const t = await (await fetch(url)).json();
+    const t = await (await fetch(url || opts.tokenizerUrl)).json();
     vocab = t.vocab;
     ranks = new Map(t.merges.map((m, i) => [m, i]));
     idToTok = Object.fromEntries(Object.entries(vocab).map(([k, v]) => [v, k]));
@@ -70,7 +80,7 @@ const QwenBPE = (() => {
   }
 
   function decode(ids) {
-    const SPECIAL = { 151644: "<|im_start|>", 151645: "<|im_end|>", 151667: "<think>", 151668: "</think>" };
+    const SPECIAL = scaffold.special;
     const bytes = [];
     let out = "";
     const flush = () => {
@@ -86,11 +96,34 @@ const QwenBPE = (() => {
     return out;
   }
 
-  // <|im_start|>user\n Q <|im_end|>\n <|im_start|>assistant\n <think>\n\n</think>\n\n
+  // scaffold.prefix + encode(question) + scaffold.suffix, e.g. for the 0.6B
+  // model: <|im_start|>user\n Q <|im_end|>\n <|im_start|>assistant\n
+  // <think>\n\n</think>\n\n
   function chatIds(question) {
-    return [151644, 872, 198, ...encode(question), 151645, 198, 151644, 77091, 198, 151667, 271, 151668, 271];
+    return [...scaffold.prefix, ...encode(question), ...scaffold.suffix];
   }
 
   return { load, encode, decode, chatIds, ready: () => !!vocab };
-})();
-if (typeof module !== "undefined") module.exports = QwenBPE;
+}
+
+// Chat-template scaffolds: the token ids wrapped around the encoded question,
+// and the id->string map decode() uses for specials. Differ per vocab.
+const QWEN_SCAFFOLDS = {
+  "0.6b": {
+    prefix: [151644, 872, 198],
+    suffix: [151645, 198, 151644, 77091, 198, 151667, 271, 151668, 271],
+    special: { 151644: "<|im_start|>", 151645: "<|im_end|>", 151667: "<think>", 151668: "</think>" },
+  },
+  "35b": {
+    prefix: [248045, 846, 198],
+    suffix: [248046, 198, 248045, 74455, 198, 248068, 271, 248069, 271],
+    special: { 248045: "<|im_start|>", 248046: "<|im_end|>", 248068: "<think>", 248069: "</think>" },
+  },
+};
+
+// Backwards-compatible default singleton for the 0.6B model — existing
+// callers (`QwenBPE.load("qwen-tokenizer.json")`, `QwenBPE.encode(...)`,
+// etc.) keep working unchanged.
+const QwenBPE = createQwenBPE({ tokenizerUrl: "qwen-tokenizer.json", scaffold: QWEN_SCAFFOLDS["0.6b"] });
+
+if (typeof module !== "undefined") module.exports = { QwenBPE, createQwenBPE, QWEN_SCAFFOLDS };
