@@ -249,7 +249,7 @@
         <div class="modelpick">
           <button id="pick-stories" class="on" onclick="pickModel('stories')">
             <span class="name">stories260K <span class="pill live">LIVE</span></span>
-            <div class="meta">Llama-2 · 260K params · weights fully on-chain · ~1.4B gas / 32 tokens</div>
+            <div class="meta">Llama-2 · 260K params · weights fully on-chain · ~1.4B gas / 32 tokens · <b>≈1 min per story</b> · <span style="color:var(--acc2)">children's stories only</span></div>
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
             <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
@@ -729,9 +729,11 @@ async function loadHistory(announceNew){
       toBlock: "latest", topics: [cfg.topic] }]);
     if (!logs.length) { $("history").innerHTML = "no on-chain answers yet for "+cfg.label+"."; return; }
     let html = "";
+    const HIDDEN = [/^the crypto left/i];
     for (const lg of logs.slice(-12).reverse()) {
       const d = model==="qwen" ? decodeChatAnswered(lg.data) : decodeStoryTold(lg.data);
       const q = model==="qwen" ? qwenQuestion(d.promptIds) : d.prompt;
+      if (HIDDEN.some(rx => rx.test(q))) continue;
       html += `<div class="story"><b>${esc(q)}</b><br>${esc(d.text)}
         <div class="m">${d.tokens.length} tokens · quorum-signed ·
         <a target="_blank" href="https://sepolia.etherscan.io/tx/${lg.transactionHash}">verifyAndUpdate ↗</a>
@@ -753,7 +755,7 @@ async function initChat(){
     `shared engine <span class="addr">${C.engine.toLowerCase()}</span><br>` +
     `overlay manifest <span class="addr">${C.manifest.slice(0,20)}…</span><br>` +
     `<a target="_blank" style="color:var(--acc)" href="https://github.com/gas-killer/solidity-sdk/releases/tag/qwen3-0.6b-onchain-v1">pinned weight artifacts ↗</a>`;
-  pickModel("stories");
+  pickModel("qwen");
   try {
     const t = await transitions(C.qwen.addr);
     $("qwen-pill").textContent = t > 0 ? "LIVE" : "AWAITING OPERATORS";
