@@ -5,18 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gas Killer · On-chain LLM</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E⛽%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Chakra+Petch:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
 <style>
+  /* palette + type from gas-killer/site: black, zinc, emerald/orange accents,
+     Space Grotesk body, Chakra Petch display kickers, dot-grid backdrop */
   :root {
-    --bg: #0b0e14; --panel: #12161f; --panel2: #171c28; --line: #232a3a;
-    --text: #dbe2f0; --dim: #7d8aa5; --acc: #5eead4; --acc2: #f0abfc;
+    --bg: #000; --panel: #09090b; --panel2: #131316; --line: rgba(255,255,255,.1);
+    --text: #e4e4e7; --dim: #a1a1aa; --acc: #34d399; --acc2: #fb923c;
     --good: #4ade80; --bad: #f87171; --warn: #fbbf24;
     --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --display: "Chakra Petch", sans-serif;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.55 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; }
-  header { padding: 22px 28px 10px; border-bottom: 1px solid var(--line); }
-  h1 { margin: 0; font-size: 21px; letter-spacing: .2px; }
+         font: 15px/1.55 "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
+         background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px);
+         background-size: 32px 32px; }
+  header { padding: 22px 28px 14px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: center; gap: 18px; }
+  .wordmark { height: 46px; width: auto; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .2px; font-family: var(--display); }
   h1 .gk { color: var(--acc); }
   .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
   .sub a { color: var(--acc); text-decoration: none; }
@@ -30,10 +39,11 @@
   /* ---- chat ---- */
   .row { display: flex; gap: 18px; flex-wrap: wrap; }
   .col { flex: 1 1 460px; min-width: 380px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
           padding: 16px 18px; margin-bottom: 16px; }
-  .card h3 { margin: 0 0 10px; font-size: 14px; color: var(--acc); font-weight: 600;
-             text-transform: uppercase; letter-spacing: .8px; }
+  .card h3 { margin: 0 0 10px; font-size: 12.5px; color: var(--dim); font-weight: 600;
+             font-family: var(--display); font-style: italic;
+             text-transform: uppercase; letter-spacing: .3em; }
   .modelpick { display: flex; gap: 8px; margin-bottom: 12px; }
   .modelpick button { flex: 1; background: var(--panel2); color: var(--dim);
     border: 1px solid var(--line); border-radius: 9px; padding: 10px; cursor: pointer;
@@ -45,7 +55,7 @@
              flex-direction: column; gap: 10px; padding: 4px 2px; }
   .msg { max-width: 88%; padding: 10px 14px; border-radius: 12px; font-size: 14px;
          white-space: pre-wrap; word-break: break-word; }
-  .msg.user { align-self: flex-end; background: #1e3a5f; border: 1px solid #29507f; }
+  .msg.user { align-self: flex-end; background: #052e21; border: 1px solid #10604a; }
   .msg.bot  { align-self: flex-start; background: var(--panel2); border: 1px solid var(--line); }
   .msg.sys  { align-self: center; background: none; color: var(--dim); font-size: 12px;
               border: 1px dashed var(--line); }
@@ -55,8 +65,9 @@
   .inbar { display: flex; gap: 8px; margin-top: 12px; }
   .inbar input[type=text] { flex: 1; background: var(--panel2); border: 1px solid var(--line);
     border-radius: 9px; color: var(--text); padding: 11px 13px; font-size: 14px; }
-  .btn { background: var(--acc); color: #06281f; font-weight: 700; border: none;
-         border-radius: 9px; padding: 11px 18px; cursor: pointer; font-size: 14px; }
+  .btn { background: var(--acc); color: #022c22; font-weight: 700; border: none;
+         border-radius: 9px; padding: 11px 18px; cursor: pointer; font-size: 14px;
+         font-family: var(--display); }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
   .kv { font-family: var(--mono); font-size: 12px; color: var(--dim); line-height: 1.9; }
@@ -127,12 +138,15 @@
 </head>
 <body>
 <header>
+  <img src="gk-wordmark.png" alt="Gas Killer" class="wordmark">
+  <div>
   <h1><span class="gk">Gas Killer</span> · On-chain LLM</h1>
   <div class="sub">
     Transformer inference in pure Solidity, executed by an EigenLayer operator quorum under unbounded simulation, settled on Sepolia as one storage write.
     <a href="https://github.com/gas-killer/solidity-sdk/pull/56" target="_blank">contracts</a> ·
     <a href="https://github.com/gas-killer/service/pull/319" target="_blank">service</a> ·
     <a href="https://github.com/gas-killer/gas-analyzer/pull/168" target="_blank">overlays</a>
+  </div>
   </div>
 </header>
 <nav>
@@ -153,12 +167,13 @@
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
             <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
-            <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens</div>
+            <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens · <b>≈40 min per answer</b></div>
           </button>
         </div>
         <div id="chatlog"></div>
         <div class="inbar">
           <input type="text" id="prompt" placeholder="Once upon a time" value="Once upon a time">
+          <select id="qwenprompt" style="display:none"></select>
           <button class="btn" id="send" onclick="send()">Ask the chain</button>
         </div>
         <div class="note" style="margin-top:8px" id="chat-note"></div>
@@ -280,6 +295,7 @@
 </section>
 </main>
 
+<script src="qwen-bpe.js"></script>
 <script>
 /* =================== constants =================== */
 const C = {
@@ -296,8 +312,16 @@ const C = {
     sel: "0xdf5b7e31", countSel: "0xf4833e20",
     fromBlock: 11253000, gasPerTok: 28.6e9, label: "Qwen3-0.6B",
     event: "ChatAnswered",
-    // "What is Ethereum?" chat-template ids (tokenized off-chain; ids are the task input)
-    promptIds: [151644,872,198,3838,374,33946,30,151645,198,151644,77091,198,151667,271,151668,271],
+    // Qwen tokenizes off-chain (byte-BPE + chat template) — the contract takes ids,
+    // not text, so prompts are preset. ids = <|im_start|>user\n Q <|im_end|>\n
+    // <|im_start|>assistant\n <think>\n\n</think>\n\n (verified vs the live run).
+    presets: [
+      {q:"What is Ethereum?",        ids:[151644,872,198,3838,374,33946,30,151645,198,151644,77091,198,151667,271,151668,271]},
+      {q:"What is a blockchain?",    ids:[151644,872,198,3838,374,264,17944,30,151645,198,151644,77091,198,151667,271,151668,271]},
+      {q:"Who created Bitcoin?",     ids:[151644,872,198,15191,3465,13127,30,151645,198,151644,77091,198,151667,271,151668,271]},
+      {q:"What is a smart contract?",ids:[151644,872,198,3838,374,264,7785,5116,30,151645,198,151644,77091,198,151667,271,151668,271]},
+      {q:"Why is the sky blue?",     ids:[151644,872,198,10234,374,279,12884,6303,30,151645,198,151644,77091,198,151667,271,151668,271]},
+    ],
   },
   from: "0x6636A1CCBdf54485067304C1a590DE016DeaD9F0",
   engine: "0x3386985D9A964224D681929F57D8927701E07C14",
@@ -381,15 +405,48 @@ function calldataBytes(cd){
 }
 
 /* =================== chat =================== */
+// Lazy tokenizer: 4.7MB vocab+merges (≈1.5MB gzipped), fetched only when the
+// user picks a custom Qwen question. Verified 30/30 vs the HF tokenizer.
+let tokLoading = null;
+function ensureTokenizer(){
+  if (!tokLoading) tokLoading = QwenBPE.load("qwen-tokenizer.json");
+  return tokLoading;
+}
 function pickModel(m){
   model = m;
   $("pick-stories").classList.toggle("on", m==="stories");
   $("pick-qwen").classList.toggle("on", m==="qwen");
-  $("prompt").value = m==="stories" ? "Once upon a time" : "What is Ethereum?";
-  $("prompt").disabled = (m==="qwen");
+  const qp = $("qwenprompt");
+  if (m === "qwen") {
+    if (!qp.options.length) {
+      C.qwen.presets.forEach((p,i) => qp.add(new Option(p.q, i)));
+      qp.add(new Option("✍️ Custom question…", "custom"));
+      qp.onchange = () => {
+        const custom = qp.value === "custom";
+        $("prompt").style.display = custom ? "" : "none";
+        if (custom) {
+          $("prompt").value = ""; $("prompt").placeholder = "Ask Qwen anything…";
+          $("prompt").focus();
+          ensureTokenizer();
+        }
+      };
+    }
+    qp.style.display = ""; qp.style.flex = "1";
+    qp.onchange();
+  } else {
+    qp.style.display = "none";
+    $("prompt").style.display = "";
+    $("prompt").placeholder = "Once upon a time";
+    $("prompt").value = "Once upon a time";
+  }
   $("chat-note").innerHTML = m==="qwen"
-    ? "Qwen prompts are tokenized off-chain (byte-level BPE + chat template); this page ships the ids for <b>“What is Ethereum?”</b>. The answer text is decoded fully on-chain."
-    : "stories260K tokenizes fully on-chain — type anything. Greedy decoding: same prompt ⇒ same story, verifiable by every operator.";
+    ? "Pick a preset or write your own question — custom prompts are tokenized <b>in your browser</b> " +
+      "(same byte-level BPE as the model, verified token-for-token vs HuggingFace) and the contract " +
+      "receives raw token ids. The answer text is decoded fully on-chain. <b>≈40 min per answer</b>: " +
+      "the quorum runs ~545B gas of transformer per reply."
+    : "stories260K tokenizes fully on-chain — type anything. Greedy decoding: same prompt ⇒ same story, " +
+      "verifiable by every operator. Settles in ~1 min. (It only speaks children's-story — it's the " +
+      "mechanism demo; use Qwen for real questions.)";
   loadHistory();
 }
 function addMsg(cls, html){
@@ -407,7 +464,32 @@ async function send(){
   const cfg = C[model];
   const prompt = $("prompt").value.trim() || "Once upon a time";
   const key = $("apikey").value.trim();
-  addMsg("user", esc(model==="qwen" ? "What is Ethereum?" : prompt));
+  // resolve the Qwen prompt: preset ids, or tokenize the custom question in-browser
+  let qwenIds = null, qwenText = null;
+  if (model === "qwen") {
+    const qp = $("qwenprompt");
+    if (qp.value === "custom") {
+      qwenText = $("prompt").value.trim();
+      if (!qwenText) { addMsg("sys", "type a question first."); return; }
+      const busy = addMsg("sys", "tokenizing in your browser…");
+      try {
+        await ensureTokenizer();
+        const qIds = QwenBPE.encode(qwenText);
+        if (qIds.length > 48) {
+          busy.innerHTML = "that question is <b>" + qIds.length + " tokens</b> — keep it ≤48 " +
+            "(every prompt token costs the operators ~1.5B gas of prefill).";
+          return;
+        }
+        qwenIds = QwenBPE.chatIds(qwenText);
+        busy.innerHTML = "tokenized ✓ " + qIds.length + " question tokens · round-trip check: “" +
+          esc(QwenBPE.decode(qIds)) + "”";
+      } catch(e) { busy.innerHTML = "✗ tokenizer: " + esc(String(e.message||e)); return; }
+    } else {
+      const p = C.qwen.presets[+qp.value];
+      qwenText = p.q; qwenIds = p.ids;
+    }
+  }
+  addMsg("user", esc(model==="qwen" ? qwenText : prompt));
   if (!key) { addMsg("sys", "no API key — reads only. Paste a gk_… key to submit tasks."); return; }
   if (!key.startsWith("gk_")) {
     addMsg("sys", "that doesn't look like an API key (expected <b>gk_…</b>). If you pasted the " +
@@ -426,7 +508,7 @@ async function send(){
       if (!fh.forkHead) throw new Error("overlay fork unreachable (/forkhead)");
       height = fh.forkHead;
     }
-    const cd = model==="qwen" ? encAsk(cfg.promptIds, 8) : encTellStory(prompt, 32);
+    const cd = model==="qwen" ? encAsk(qwenIds, 8) : encTellStory(prompt, 32);
     const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
       transition_index: ti, from_address: C.from, value: "0",
       block_height: height }};
@@ -449,8 +531,8 @@ async function send(){
 // a round is done exactly when stateTransitionCount() passes the count at submission.
 // Expected wall-clock per round, from measured operator traces (stories ~30s; the
 // Qwen 545B-gas trace runs ~25-50min on the shared fork).
-const ROUND_EXPECT = { stories: 60e3, qwen: 50*60e3 };
-const ROUND_MAX    = { stories: 10*60e3, qwen: 90*60e3 };
+const ROUND_EXPECT = { stories: 60e3, qwen: 40*60e3 };   // qwen measured: 36 min on the c3 sim node
+const ROUND_MAX    = { stories: 10*60e3, qwen: 95*60e3 };
 let watchTimer = null, healthTimer = null;
 
 function roundState(){ try { return JSON.parse(localStorage.getItem("gk-round")); } catch(e){ return null; } }
@@ -522,6 +604,17 @@ function watchRound(){
   };
   watchTimer = setInterval(tick, 3e3); tick();
 }
+// Recover the question text from a ChatAnswered event's prompt ids: exact
+// preset match first, full BPE decode if the tokenizer is loaded, count otherwise.
+function qwenQuestion(promptIds){
+  const key = JSON.stringify(promptIds);
+  const preset = C.qwen.presets.find(p => JSON.stringify(p.ids) === key);
+  if (preset) return preset.q;
+  const im_end = promptIds.indexOf(151645);
+  const qIds = promptIds.slice(3, im_end < 0 ? undefined : im_end);
+  if (QwenBPE.ready()) { try { return QwenBPE.decode(qIds); } catch(e){} }
+  return "(custom question · " + qIds.length + " tokens)";
+}
 async function loadHistory(announceNew){
   const cfg = C[model];
   try {
@@ -531,7 +624,7 @@ async function loadHistory(announceNew){
     let html = "";
     for (const lg of logs.slice(-12).reverse()) {
       const d = model==="qwen" ? decodeChatAnswered(lg.data) : decodeStoryTold(lg.data);
-      const q = model==="qwen" ? "What is Ethereum?" : d.prompt;
+      const q = model==="qwen" ? qwenQuestion(d.promptIds) : d.prompt;
       html += `<div class="story"><b>${esc(q)}</b><br>${esc(d.text)}
         <div class="m">${d.tokens.length} tokens · quorum-signed ·
         <a target="_blank" href="https://sepolia.etherscan.io/tx/${lg.transactionHash}">verifyAndUpdate ↗</a>
