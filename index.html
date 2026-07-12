@@ -326,6 +326,26 @@ let model = "stories";
 
 /* =================== tiny helpers =================== */
 const $ = id => document.getElementById(id);
+// Some networks (VPNs / TLS middleboxes) mangle TLS straight to the GKE load
+// balancer. This Cloudflare Worker relays the router's public paths from
+// Cloudflare's edge; the page falls back to it automatically and sticks with
+// whichever base works.
+const ROUTER_RELAY = "https://gk-router-proxy.ronturetzky.workers.dev";
+let routerBase = null;
+async function routerFetch(path, opts){
+  const bases = [];
+  if (routerBase) bases.push(routerBase);
+  for (const b of [$("router").value.trim(), ROUTER_RELAY]) if (!bases.includes(b)) bases.push(b);
+  let lastErr;
+  for (const b of bases) {
+    try {
+      const r = await fetch(b + path, opts);   // HTTP errors return; only network failures throw
+      routerBase = b;
+      return r;
+    } catch(e){ lastErr = e; }
+  }
+  throw lastErr;
+}
 const rpcUrl = () => $("rpc").value.trim();
 const hex = n => "0x" + n.toString(16);
 const RPC_FALLBACKS = ["https://sepolia.drpc.org", "https://sepolia.gateway.tenderly.co", "https://rpc.sepolia.org"];
@@ -476,7 +496,7 @@ async function send(){
     let height = parseInt(blk, 16) - 3;
     if (model === "qwen") {
       // Qwen simulates on the overlay fork — the task must reference its head
-      const fh = await fetch($("router").value.trim() + "/forkhead").then(r => r.json());
+      const fh = await routerFetch("/forkhead").then(r => r.json());
       if (!fh.forkHead) throw new Error("overlay fork unreachable (/forkhead)");
       height = fh.forkHead;
     }
@@ -484,7 +504,7 @@ async function send(){
     const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
       transition_index: ti, from_address: C.from, value: "0",
       block_height: height }};
-    const r = await fetch($("router").value.trim() + "/trigger", { method:"POST",
+    const r = await routerFetch("/trigger", { method:"POST",
       headers: {"Content-Type":"application/json", "Authorization":"Bearer "+key},
       body: JSON.stringify(body) });
     const jt = await r.text();
@@ -528,9 +548,10 @@ function paintStages(frac, done){
 }
 async function pollHealth(){
   try {
-    const r = await fetch($("router").value.trim() + "/healthz", { method: "GET" });
+    const r = await routerFetch("/healthz", { method: "GET" });
+    const via = routerBase === ROUTER_RELAY ? " (via edge relay)" : "";
     $("rc-health").className = "hdot " + (r.ok ? "up" : "down");
-    $("rc-healthtext").textContent = r.ok ? "router live" : "router unhealthy (HTTP "+r.status+")";
+    $("rc-healthtext").textContent = r.ok ? "router live" + via : "router unhealthy (HTTP "+r.status+")";
   } catch(e) {
     $("rc-health").className = "hdot down";
     $("rc-healthtext").textContent = "router unreachable";
