@@ -218,7 +218,7 @@
   </div>
   <div class="statrow" style="margin-top:10px">
     <span class="statchip" style="border-color:var(--acc2)"><b>NEW · sharded + native fast-executor</b> — one answer split across the operator committee</span>
-    <span class="statchip">Qwen3.5-35B <b>≈35-40 min</b> <span style="opacity:.7">(was ≈2 h · ~3.4×)</span></span>
+    <span class="statchip">Qwen3.5-35B <b>≈75 min</b> <span style="opacity:.7">(was ≈2 h 13 m · ~1.8×)</span></span>
     <span class="statchip">Qwen3-0.6B <b>≈4 min</b> <span style="opacity:.7">(was ≈40 min · ~10×)</span></span>
     <span class="statchip" style="opacity:.85">measured live · bit-exact 2-of-3 committee agreement per segment</span>
   </div>
@@ -231,7 +231,7 @@
     the reference interpreter, so operators still agree exactly. The dense 0.6B is
     compute-bound and drops to ≈4 min (~9× per segment); the 34&nbsp;GB MoE 35B is
     weight-bandwidth-bound, so its win comes from the sharded batch-prefill itself
-    (≈2&nbsp;h → ≈35-40 min), with the fast executor serving it byte-identically.
+    (≈2&nbsp;h 13 m → ≈75 min measured), with the fast executor serving it byte-identically.
   </p>
 </section>
 
@@ -266,7 +266,7 @@
         <div class="modelpick">
           <button id="pick-qwen35" onclick="pickModel('qwen35')">
             <span class="name">Qwen3.5-35B-A3B <span class="pill wait" id="qwen35-pill">CHECKING…</span></span>
-            <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · <b>≈35-40 min sharded</b> across the operator committee · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
+            <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · <b>≈75 min sharded</b> across the operator committee · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
             <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
@@ -453,11 +453,13 @@ const C = {
   },
   qwen35: {
     // SHARDED 35B-A3B consumer — DeltaNet + gated-attn + MoE run as segment
-    // committees; fulfil() lands one gate-verified settlement here.
-    addr: "0x25d5e13f7cd467dd5d0cee815ccc000735f9a627",
+    // committees; fulfil() lands one gate-verified settlement here. (The
+    // resume-capable deploy 0x25d5 writes two slots in fulfil, which the
+    // unbounded gas profile rejects — this pre-resume one commits one slot.)
+    addr: "0xfd0ef988216d0346bf115530387021c1b699336d",
     topic: "0x3d3288922fb750f4c301145bee4ae0c63a6229879e85c43079b8fb56fc81d187",
     sel: "0xdf5b7e31", countSel: "0xf4833e20",
-    fromBlock: 11256000, gasPerTok: 3.6e12, label: "Qwen3.5-35B-A3B",
+    fromBlock: 11286700, gasPerTok: 3.6e12, label: "Qwen3.5-35B-A3B",
     event: "ChatAnswered", tokenizerUrl: "qwen35-tokenizer.json",
     scaffold: QWEN_SCAFFOLDS["35b"],
     // Same chat template shape as the 0.6B, different vocab + special-token
@@ -610,7 +612,7 @@ function pickModel(m){
       "headline, not an essay."
     : m==="qwen35"
     ? "Ask anything — 35 billion parameters answering on Ethereum. The operator quorum executes " +
-      "~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — <b>≈35-40 min " +
+      "~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — <b>≈75 min " +
       "sharded</b> across the committee, then one BLS-quorum settlement lands it on Sepolia. " +
       "Answers capped at 8 tokens. Tokenized in your browser; weights committed on-chain as a " +
       "single 32-byte manifest (0x7bdf4876…)."
@@ -718,10 +720,11 @@ async function send(){
 // Expected wall-clock per round, from measured operator traces (stories ~30s; the
 // Qwen 545B-gas trace runs ~25-50min on the shared fork; the 35B 3.6T-gas trace
 // runs ~2h+ cold on the shared fork).
-// Sharded path, measured live: 0.6B ≈2 min committee inference + ~1 min BLS
-// settlement; 35B ≈35-40 min. MAX allows one-time cold daemon warmup.
-const ROUND_EXPECT = { stories: 60e3, qwen: 4*60e3, qwen35: 40*60e3 };
-const ROUND_MAX    = { stories: 10*60e3, qwen: 30*60e3, qwen35: 150*60e3 };
+// Sharded path, measured live end-to-end through the bridge: 0.6B ≈2 min
+// committee inference + ~1 min BLS settlement; 35B ≈74 min + settlement.
+// MAX allows one-time cold daemon warmup.
+const ROUND_EXPECT = { stories: 60e3, qwen: 4*60e3, qwen35: 75*60e3 };
+const ROUND_MAX    = { stories: 10*60e3, qwen: 30*60e3, qwen35: 180*60e3 };
 let watchTimer = null, healthTimer = null;
 
 function roundState(){ try { return JSON.parse(localStorage.getItem("gk-round")); } catch(e){ return null; } }
