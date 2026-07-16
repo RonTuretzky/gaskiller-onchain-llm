@@ -766,14 +766,16 @@ function watchRound(){
   $("rc-model").textContent = cfg.label;
   $("rc-expect").textContent = "· expect ~" + fmtDur(ROUND_EXPECT[st.model]);
   pollHealth(); healthTimer = setInterval(pollHealth, 30e3);
-  let busy = false;
+  let busy = false, realFrac = null;   // realFrac: measured segment progress from the bridge
   const tick = async () => {
     const el = Date.now() - st.t0;
     $("rc-elapsed").textContent = fmtDur(el);
-    // creep toward 93% over the expected duration, then hold (indeterminate tail)
-    const frac = Math.min(0.93, 0.02 + 0.91 * el / ROUND_EXPECT[st.model]);
+    // real segment progress when the bridge reports it; otherwise creep toward
+    // 93% over the expected duration, then hold (indeterminate tail)
+    const frac = realFrac !== null ? realFrac
+               : Math.min(0.93, 0.02 + 0.91 * el / ROUND_EXPECT[st.model]);
     $("rc-fill").style.width = (frac*100).toFixed(1) + "%";
-    $("rc-pbar").classList.toggle("indet", el > ROUND_EXPECT[st.model]);
+    $("rc-pbar").classList.toggle("indet", realFrac === null && el > ROUND_EXPECT[st.model]);
     paintStages(frac, false);
     if (busy || el % 12e3 > 3e3) return;   // chain poll every ~12s, timer every 3s
     busy = true;
@@ -782,11 +784,19 @@ function watchRound(){
       if (st.askId) {
         try {
           const bs = await fetch(BRIDGE + "/bridge/ask/" + st.askId).then(r => r.json());
-          if (bs.state === "inferring")
-            $("rc-healthtext").textContent = "operators computing sharded segments…";
-          else if (bs.state === "settling")
+          if (bs.state === "inferring") {
+            if (bs.segments_total) {
+              // live per-segment progress from the router's /shard/active
+              realFrac = Math.min(0.95, 0.03 + 0.92 * (bs.segments_done / bs.segments_total));
+              $("rc-healthtext").textContent = "operators computing sharded segments… " +
+                bs.segments_done + "/" + bs.segments_total + " agreed bit-exact";
+            } else {
+              $("rc-healthtext").textContent = "operators computing sharded segments…";
+            }
+          } else if (bs.state === "settling") {
+            realFrac = 0.97;
             $("rc-healthtext").textContent = "inference done ✓ — submitting the on-chain settlement…";
-          else if (bs.state === "error") {
+          } else if (bs.state === "error") {
             $("rc-healthtext").textContent = "bridge error: " + String(bs.error || "").slice(0, 80);
             clearInterval(watchTimer);
           }
