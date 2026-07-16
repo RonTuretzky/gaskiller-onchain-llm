@@ -439,10 +439,12 @@ const C = {
     event: "StoryTold",
   },
   qwen: {
-    addr: "0x4223fca00ad3feabb59c0d3dec0067f05ee31cf8",
-    topic: "0xdf3af7850be38484a8b851d193f88f555926412ce060ade688d461e34957061b",
+    // SHARDED 0.6B consumer — inference runs as hash-committed segments across
+    // the operator committee; fulfil() lands one gate-verified settlement here.
+    addr: "0xd3f7f985f14f1942fb09e5735e5499feff56e80b",
+    topic: "0x3d3288922fb750f4c301145bee4ae0c63a6229879e85c43079b8fb56fc81d187",
     sel: "0xdf5b7e31", countSel: "0xf4833e20",
-    fromBlock: 11253000, gasPerTok: 28.6e9, label: "Qwen3-0.6B",
+    fromBlock: 11256000, gasPerTok: 28.6e9, label: "Qwen3-0.6B",
     event: "ChatAnswered", tokenizerUrl: "qwen-tokenizer.json",
     scaffold: QWEN_SCAFFOLDS["0.6b"],
     // Qwen questions are tokenized in-browser (qwen-bpe.js) into the chat
@@ -450,10 +452,12 @@ const C = {
     // <think>\n\n</think>\n\n — the contract receives raw token ids.
   },
   qwen35: {
-    addr: "0xb7d8d5c215135ac557ea385eea744764b8f03a66",
-    topic: "0xdf3af7850be38484a8b851d193f88f555926412ce060ade688d461e34957061b",
+    // SHARDED 35B-A3B consumer — DeltaNet + gated-attn + MoE run as segment
+    // committees; fulfil() lands one gate-verified settlement here.
+    addr: "0x25d5e13f7cd467dd5d0cee815ccc000735f9a627",
+    topic: "0x3d3288922fb750f4c301145bee4ae0c63a6229879e85c43079b8fb56fc81d187",
     sel: "0xdf5b7e31", countSel: "0xf4833e20",
-    fromBlock: 11260000, gasPerTok: 3.6e12, label: "Qwen3.5-35B-A3B",
+    fromBlock: 11256000, gasPerTok: 3.6e12, label: "Qwen3.5-35B-A3B",
     event: "ChatAnswered", tokenizerUrl: "qwen35-tokenizer.json",
     scaffold: QWEN_SCAFFOLDS["35b"],
     // Same chat template shape as the 0.6B, different vocab + special-token
@@ -475,6 +479,10 @@ const $ = id => document.getElementById(id);
 // Cloudflare's edge; the page falls back to it automatically and sticks with
 // whichever base works.
 const ROUTER_RELAY = "https://gk-router-proxy.ronturetzky.workers.dev";
+// The shard bridge: Qwen asks go here and run as SHARDED inference across the
+// operator committee (fast native executor), then settle on-chain via one
+// gate-verified fulfil() round. No user API key needed (the bridge holds one).
+const BRIDGE = "https://testnet.gaskiller.xyz";
 let routerBase = null;
 async function routerFetch(path, opts){
   const bases = [];
@@ -537,10 +545,12 @@ function decodeStoryTold(data){
   return { prompt: decStringAt(data, wNum(data,0)), text: decStringAt(data, wNum(data,1)),
            tokens: decUintArrAt(data, wNum(data,2)) };
 }
-// ChatAnswered data: (uint32[] promptIds, string answer, uint32[] answerIds)
+// Sharded ChatAnswered data: (uint32[] promptIds, uint32[] answerIds).
+// newRoot + pipelineRoot are indexed topics; the answer text is NOT stored
+// on-chain — it's reconstructed by BPE-decoding answerIds in the browser.
 function decodeChatAnswered(data){
-  return { promptIds: decUintArrAt(data, wNum(data,0)), text: decStringAt(data, wNum(data,1)),
-           tokens: decUintArrAt(data, wNum(data,2)) };
+  return { promptIds: decUintArrAt(data, wNum(data,0)),
+           tokens: decUintArrAt(data, wNum(data,1)) };
 }
 /* ---- minimal ABI encoding for tellStory(string,uint256) ---- */
 function encTellStory(prompt, maxNew){
@@ -644,6 +654,33 @@ async function send(){
     } catch(e) { busy.innerHTML = "✗ tokenizer: " + esc(String(e.message||e)); return; }
   }
   addMsg("user", esc(isQwen(model) ? qwenText : prompt));
+
+  // ── Qwen: SHARDED path via the bridge (no user API key needed) ──
+  // The bridge runs the inference as hash-committed segments across the operator
+  // committee (native fast executor), then submits ONE gate-verified fulfil()
+  // settlement round. We watch the chain for the on-chain landing, same as stories.
+  if (isQwen(model)) {
+    $("send").disabled = true;
+    const wait = addMsg("sys", "starting <b>sharded</b> inference across the operator committee…");
+    try {
+      const ti = await transitions(cfg.addr);
+      const r = await fetch(BRIDGE + "/bridge/ask", { method:"POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ model, prompt_ids: qwenIds, max_new: 8 }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("bridge HTTP " + r.status));
+      wait.innerHTML = "sharded round started ✓ — segments run across the committee, then <b>one</b> " +
+        "on-chain settlement. Watch the <b>Round in progress</b> card; the answer posts here when it lands.";
+      startRound({ model, ti, t0: Date.now(), askId: j.ask_id });
+    } catch(e) {
+      wait.innerHTML = "✗ " + esc(String(e.message||e)) +
+        (String(e).includes("Failed to fetch") ? " — bridge unreachable (CORS or ingress)." : "");
+    }
+    $("send").disabled = false;
+    return;
+  }
+
+  // ── stories: direct /trigger with the visitor's own gk_ API key ──
   if (!key) { addMsg("sys", "no API key — reads only. Paste a gk_… key to submit tasks."); return; }
   if (!key.startsWith("gk_")) {
     addMsg("sys", "that doesn't look like an API key (expected <b>gk_…</b>). If you pasted the " +
@@ -655,14 +692,8 @@ async function send(){
   const wait = addMsg("sys", "submitting task to the router…");
   try {
     const [ti, blk] = await Promise.all([transitions(cfg.addr), rpc("eth_blockNumber", [])]);
-    let height = parseInt(blk, 16) - 3;
-    if (isQwen(model)) {
-      // Qwen simulates on the overlay fork — the task must reference its head
-      const fh = await routerFetch("/forkhead").then(r => r.json());
-      if (!fh.forkHead) throw new Error("overlay fork unreachable (/forkhead)");
-      height = fh.forkHead;
-    }
-    const cd = isQwen(model) ? encAsk(cfg.sel, qwenIds, 8) : encTellStory(prompt, 32);
+    const height = parseInt(blk, 16) - 3;
+    const cd = encTellStory(prompt, 32);
     const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
       transition_index: ti, from_address: C.from, value: "0",
       block_height: height }};
@@ -741,6 +772,20 @@ function watchRound(){
     if (busy || el % 12e3 > 3e3) return;   // chain poll every ~12s, timer every 3s
     busy = true;
     try {
+      // Sharded (bridge) rounds expose an inference→settle stage; surface it.
+      if (st.askId) {
+        try {
+          const bs = await fetch(BRIDGE + "/bridge/ask/" + st.askId).then(r => r.json());
+          if (bs.state === "inferring")
+            $("rc-healthtext").textContent = "operators computing sharded segments…";
+          else if (bs.state === "settling")
+            $("rc-healthtext").textContent = "inference done ✓ — submitting the on-chain settlement…";
+          else if (bs.state === "error") {
+            $("rc-healthtext").textContent = "bridge error: " + String(bs.error || "").slice(0, 80);
+            clearInterval(watchTimer);
+          }
+        } catch(_) { /* bridge poll transient */ }
+      }
       const now = await transitions(cfg.addr);
       if (now > st.ti) {
         paintStages(1, true);
@@ -778,13 +823,20 @@ async function loadHistory(announceNew){
     const logs = await rpc("eth_getLogs", [{ address: cfg.addr, fromBlock: hex(cfg.fromBlock),
       toBlock: "latest", topics: [cfg.topic] }]);
     if (!logs.length) { $("history").innerHTML = "no on-chain answers yet for "+cfg.label+"."; return; }
+    // Sharded Qwen answers store only token ids on-chain; decode text in-browser.
+    const answerText = d => {
+      if (!isQwen(model)) return d.text;
+      const bpe = bpeFor(model);
+      if (bpe.ready()) { try { return bpe.decode(d.tokens); } catch(e){} }
+      return "(" + d.tokens.length + " answer tokens — decoding…)";
+    };
     let html = "";
     const HIDDEN = [/^the crypto left/i];
     for (const lg of logs.slice(-12).reverse()) {
       const d = isQwen(model) ? decodeChatAnswered(lg.data) : decodeStoryTold(lg.data);
       const q = isQwen(model) ? qwenQuestion(d.promptIds, model) : d.prompt;
       if (HIDDEN.some(rx => rx.test(q))) continue;
-      html += `<div class="story"><b>${esc(q)}</b><br>${esc(d.text)}
+      html += `<div class="story"><b>${esc(q)}</b><br>${esc(answerText(d))}
         <div class="m">${d.tokens.length} tokens · quorum-signed ·
         <a target="_blank" href="https://sepolia.etherscan.io/tx/${lg.transactionHash}">verifyAndUpdate ↗</a>
         · block ${parseInt(lg.blockNumber,16)}</div></div>`;
@@ -793,7 +845,7 @@ async function loadHistory(announceNew){
     if (announceNew) {
       const lg = logs[logs.length-1];
       const d = isQwen(model) ? decodeChatAnswered(lg.data) : decodeStoryTold(lg.data);
-      addMsg("bot", esc(d.text) + `<span class="tag">signed by the operator quorum ·
+      addMsg("bot", esc(answerText(d)) + `<span class="tag">signed by the operator quorum ·
         <a target="_blank" href="https://sepolia.etherscan.io/tx/${lg.transactionHash}">tx ↗</a></span>`);
     }
   } catch(e) { $("history").innerHTML = "history unavailable: " + esc(String(e.message||e)); }
