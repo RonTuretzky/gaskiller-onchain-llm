@@ -266,11 +266,11 @@
         <div class="modelpick">
           <button id="pick-qwen35" onclick="pickModel('qwen35')">
             <span class="name">Qwen3.5-35B-A3B <span class="pill wait" id="qwen35-pill">CHECKING…</span></span>
-            <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · ≈2 h per answer · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
+            <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · <b>≈35-40 min sharded</b> (≈2 h in this playground) · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
             <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
-            <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens · <b>≈40 min per answer</b></div>
+            <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens · <b>≈4 min sharded</b> (≈40 min in this playground)</div>
           </button>
           <button id="pick-stories" class="on" onclick="pickModel('stories')">
             <span class="name">stories260K <span class="pill live">LIVE</span></span>
@@ -598,14 +598,16 @@ function pickModel(m){
   $("chat-note").innerHTML = m==="qwen"
     ? "Ask anything — your question is tokenized <b>in your browser</b> (same byte-level BPE as the " +
       "model, verified token-for-token vs HuggingFace) and the contract receives raw token ids; the " +
-      "answer text is decoded fully on-chain. <b>≈40 min per answer, and answers are capped at 8 " +
-      "tokens</b> (~a short sentence): each token costs the operator quorum ~28.6B gas of transformer, " +
-      "so one round buys a headline, not an essay."
+      "answer text is decoded fully on-chain. <b>≈4 min per answer sharded</b> (this playground drives " +
+      "the single-operator reference path, ≈40 min); <b>answers are capped at 8 tokens</b> (~a short " +
+      "sentence): each token costs the operator quorum ~28.6B gas of transformer, so one round buys a " +
+      "headline, not an essay."
     : m==="qwen35"
     ? "Ask anything — 35 billion parameters answering on Ethereum. The operator quorum executes " +
-      "~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer (≈2 hours). " +
-      "Answers capped at 8 tokens. Tokenized in your browser; weights committed on-chain as a single " +
-      "32-byte manifest (0x7bdf4876…)."
+      "~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — <b>≈35-40 min " +
+      "sharded</b> across the committee (this playground drives the single-operator reference path, " +
+      "≈2 h). Answers capped at 8 tokens. Tokenized in your browser; weights committed on-chain as a " +
+      "single 32-byte manifest (0x7bdf4876…)."
     : "stories260K tokenizes fully on-chain — type anything. Greedy decoding: same prompt ⇒ same story, " +
       "verifiable by every operator. Settles in ~1 min. (It only speaks children's-story — it's the " +
       "mechanism demo; use Qwen for real questions.)";
