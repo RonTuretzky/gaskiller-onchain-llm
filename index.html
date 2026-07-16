@@ -216,6 +216,23 @@
     <span class="statchip"><b>9,400,000x</b> execution compressed</span>
     <span class="statchip"><b>3-operator</b> BLS quorum</span>
   </div>
+  <div class="statrow" style="margin-top:10px">
+    <span class="statchip" style="border-color:var(--acc2)"><b>NEW · sharded + native fast-executor</b> — one answer split across the operator committee</span>
+    <span class="statchip">Qwen3.5-35B <b>≈35-40 min</b> <span style="opacity:.7">(was ≈2 h · ~3.4×)</span></span>
+    <span class="statchip">Qwen3-0.6B <b>≈4 min</b> <span style="opacity:.7">(was ≈40 min · ~10×)</span></span>
+    <span class="statchip" style="opacity:.85">measured live · bit-exact 2-of-3 committee agreement per segment</span>
+  </div>
+  <p class="sub" style="font-size:.82rem;opacity:.75;margin-top:6px">
+    Sharded mode runs one inference as hash-committed (position × layer) segments across a
+    k-of-N operator committee, batching the whole prompt into one weight pass per stage; every
+    segment's returndata is agreed bit-for-bit before the pipeline advances. A revm→revmc
+    native fast-executor then JIT-compiles each engine's bytecode once and keeps the verified
+    weight mounts + resolved state warm across segments — <b>byte-identical returndata</b> to
+    the reference interpreter, so operators still agree exactly. The dense 0.6B is
+    compute-bound and drops to ≈4 min (~9× per segment); the 34&nbsp;GB MoE 35B is
+    weight-bandwidth-bound, so its win comes from the sharded batch-prefill itself
+    (≈2&nbsp;h → ≈35-40 min), with the fast executor serving it byte-identically.
+  </p>
 </section>
 
 <nav>
@@ -247,17 +264,17 @@
     <div class="col" style="flex:1.5 1 520px">
       <div class="card">
         <div class="modelpick">
-          <button id="pick-stories" class="on" onclick="pickModel('stories')">
-            <span class="name">stories260K <span class="pill live">LIVE</span></span>
-            <div class="meta">Llama-2 · 260K params · weights fully on-chain · ~1.4B gas / 32 tokens · <b>≈1 min per story</b> · <span style="color:var(--acc2)">children's stories only</span></div>
+          <button id="pick-qwen35" onclick="pickModel('qwen35')">
+            <span class="name">Qwen3.5-35B-A3B <span class="pill wait" id="qwen35-pill">CHECKING…</span></span>
+            <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · ≈2 h per answer · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
             <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
             <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens · <b>≈40 min per answer</b></div>
           </button>
-          <button id="pick-qwen35" onclick="pickModel('qwen35')">
-            <span class="name">Qwen3.5-35B-A3B <span class="pill wait" id="qwen35-pill">CHECKING…</span></span>
-            <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · ≈2 h per answer · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
+          <button id="pick-stories" class="on" onclick="pickModel('stories')">
+            <span class="name">stories260K <span class="pill live">LIVE</span></span>
+            <div class="meta">Llama-2 · 260K params · weights fully on-chain · ~1.4B gas / 32 tokens · <b>≈1 min per story</b> · <span style="color:var(--acc2)">children's stories only</span></div>
           </button>
         </div>
         <div id="chatlog"></div>
