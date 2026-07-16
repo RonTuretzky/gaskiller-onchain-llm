@@ -290,12 +290,7 @@
         <div class="stagerow" id="rc-stages"></div>
         <div class="note" style="margin-top:8px">
           <span class="hdot" id="rc-health"></span><span id="rc-healthtext">checking router…</span>
-          &nbsp;·&nbsp; elapsed <b id="rc-elapsed">0s</b> <span id="rc-expect"></span><br>
-          The router has no public task-status API, so progress is read <b>trustlessly from the
-          chain</b>: this page polls <code>stateTransitionCount()</code> until the quorum's
-          <code>verifyAndUpdate</code> lands, and the health dot polls the router's
-          <code>/healthz</code>. Survives reloads — come back any time.
-          <a href="#" onclick="dismissRound();return false" style="color:var(--dim)">dismiss</a>
+          &nbsp;·&nbsp; elapsed <b id="rc-elapsed">0s</b> <span id="rc-expect"></span>
         </div>
       </div>
       <div class="card">
