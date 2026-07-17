@@ -75,6 +75,78 @@
   main { max-width: 1060px; margin: 0 auto; padding: 24px 28px 40px; }
   .tab { display: none; } .tab.on { display: block; }
 
+  /* ---- animated pipeline + step visuals (crowdstake-style CSS diagrams) ---- */
+  .pipeviz { max-width: 880px; margin: 28px auto 0; border: 2px solid var(--line2);
+    background: var(--panel); box-shadow: 6px 6px 0 var(--ink-acc); padding: 20px 22px 14px;
+    text-align: center; }
+  .pv-row { display: flex; align-items: center; justify-content: center; gap: 12px;
+    flex-wrap: wrap; }
+  .pv-node { border: 1.5px solid var(--line2); background: var(--panel2);
+    padding: 9px 12px; font-family: var(--mono); font-size: 11px; color: var(--text);
+    box-shadow: 3px 3px 0 var(--ink); flex: none; }
+  .pv-node .t { display: block; color: var(--dim); font-size: 9px; margin-top: 4px;
+    letter-spacing: .12em; text-transform: uppercase; font-family: var(--display); }
+  .pv-flow { position: relative; width: 42px; height: 8px; flex: none; }
+  .pv-flow span { position: absolute; top: 50%; left: 0; width: 6px; height: 6px;
+    margin-top: -3px; background: var(--acc); animation: pvflow 1.8s linear infinite; }
+  .pv-flow span:nth-child(2) { animation-delay: .6s; }
+  .pv-flow span:nth-child(3) { animation-delay: 1.2s; }
+  @keyframes pvflow { 0% { left: 0; opacity: 0 } 15% { opacity: 1 }
+    85% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  .pv-grid { display: grid; grid-template-columns: repeat(8, 13px); gap: 3px;
+    flex: none; padding: 4px; }
+  .pv-grid i { width: 13px; height: 13px; background: #1a2130;
+    animation: pvseg 7s linear infinite; }
+  @keyframes pvseg { 0%, 4% { background: #1a2130 } 6%, 85% { background: var(--acc) }
+    90%, 100% { background: #1a2130 } }
+  .pv-late { animation: pvpop 7s linear infinite; }
+  @keyframes pvpop { 0%, 66% { border-color: var(--line2); color: var(--dim) }
+    70%, 92% { border-color: var(--acc); color: var(--acc);
+      box-shadow: 3px 3px 0 var(--ink-acc) } 96%, 100% { border-color: var(--line2) } }
+  .pv-cap { font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    margin: 14px 0 0; }
+  /* step mini-visuals */
+  .sv { display: flex; align-items: center; justify-content: center; gap: 10px;
+    flex-wrap: wrap; margin: 14px 0 12px; min-height: 74px; }
+  .tokrow { display: flex; gap: 4px; flex: none; }
+  .tokrow i { font-style: normal; font-family: var(--mono); font-size: 10.5px;
+    color: var(--acc); border: 1px solid #1e5a37; background: #0b241a;
+    padding: 4px 6px; animation: tokpop 4.5s linear infinite; }
+  .tokrow i:nth-child(2) { animation-delay: .25s } .tokrow i:nth-child(3) { animation-delay: .5s }
+  .tokrow i:nth-child(4) { animation-delay: .75s }
+  @keyframes tokpop { 0%, 8% { opacity: 0; transform: translateY(4px) }
+    14%, 88% { opacity: 1; transform: none } 94%, 100% { opacity: 0 } }
+  .op { border: 1.5px solid var(--line2); background: var(--panel2); flex: none;
+    padding: 7px 9px 8px; font-family: var(--mono); font-size: 10px; color: var(--dim);
+    box-shadow: 3px 3px 0 var(--ink); }
+  .op b { display: block; width: 52px; height: 6px; background: #1a2130;
+    margin-top: 6px; overflow: hidden; }
+  .op b i { display: block; height: 100%; width: 100%; background: var(--acc);
+    transform-origin: left; animation: opfill 4.5s linear infinite; }
+  .op:nth-child(2) b i { animation-delay: .3s } .op:nth-child(3) b i { animation-delay: .6s }
+  @keyframes opfill { 0% { transform: scaleX(0) } 55% { transform: scaleX(1) }
+    92% { transform: scaleX(1) } 100% { transform: scaleX(0) } }
+  .agree { font-family: var(--mono); font-size: 10.5px; color: var(--good); flex: none;
+    border: 1px solid #1e5a37; background: #0b241a; padding: 5px 8px;
+    animation: agreeon 4.5s linear infinite; }
+  @keyframes agreeon { 0%, 58% { opacity: .25 } 66%, 92% { opacity: 1 } 100% { opacity: .25 } }
+  .gasbar { position: relative; flex: none; height: 22px; border: 1.5px solid var(--line2);
+    background: repeating-linear-gradient(-45deg, #2a1607 0 6px, #3a1e09 6px 12px);
+    display: flex; align-items: center; justify-content: center; }
+  .gasbar span { font-family: var(--mono); font-size: 9.5px; color: var(--acc2);
+    white-space: nowrap; padding: 0 6px; }
+  .gasbar.big { width: 118px; }
+  .gasbar.tiny { width: 48px; border-color: #1e5a37; background: #0b241a;
+    animation: agreeon 4.5s linear infinite; }
+  .gasbar.tiny span { color: var(--acc); }
+  .cap { font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    margin: 0; line-height: 1.6; }
+  @media (prefers-reduced-motion: reduce) {
+    .pv-flow span, .pv-grid i, .pv-late, .tokrow i, .op b i, .agree, .gasbar.tiny
+      { animation: none; }
+    .pv-grid i { background: var(--acc); } .agree { opacity: 1; }
+  }
+
   /* ---- chat ---- */
   .row { display: flex; gap: 20px; flex-wrap: wrap; }
   .col { flex: 1 1 460px; min-width: 380px; }
@@ -249,11 +321,9 @@
   <p class="kicker">Gas Killer · Live Testnet Demo</p>
   <h1>A language model,<br><span class="gk">running on Ethereum.</span></h1>
   <p class="sub">
-    Full transformer inference in pure Solidity — from a 260K-parameter toy to a
-    35-billion-parameter mixture-of-experts. A
-    <a href="https://gaskiller.xyz" target="_blank">Gas Killer</a> operator quorum executes
-    the trillions of gas off-chain, agrees bit-for-bit, and settles every answer on Sepolia
-    with one BLS-verified storage write. Off-chain execution. On-chain security.
+    A 35-billion-parameter transformer in pure Solidity — executed off-chain by a
+    <a href="https://gaskiller.xyz" target="_blank">Gas Killer</a> operator quorum,
+    settled on Sepolia with one BLS signature.
   </p>
   <div class="statrow">
     <span class="statchip"><b>35B</b> parameters (Qwen3.5 MoE)</span>
@@ -268,15 +338,24 @@
     <span class="statchip">Qwen3-0.6B <b>≈4 min</b> <span style="opacity:.7">(was ≈40 min · ~10×)</span></span>
     <span class="statchip" style="opacity:.85">measured live · bit-exact committee agreement per segment</span>
   </div>
-  <p class="sub" style="font-size:.82rem;opacity:.78;margin-top:8px;max-width:720px">
-    Sharded mode splits one inference into hash-committed (position × layer) segments across
-    an operator committee — every segment agreed bit-for-bit before the pipeline advances.
-    A revm→revmc native fast-executor JIT-compiles each engine once and keeps verified
-    weights warm across segments, returning <b>byte-identical results</b> to the reference
-    interpreter. Measured live: the dense 0.6B is compute-bound and drops to ≈4&nbsp;min
-    (~9× per segment); the 34&nbsp;GB MoE 35B is bandwidth-bound, so its win comes from the
-    sharded batch-prefill itself (≈2&nbsp;h&nbsp;13&nbsp;m → ≈75&nbsp;min).
-  </p>
+  <div class="pipeviz">
+    <div class="pv-row">
+      <span class="pv-node">"what is ethereum?"<span class="t">prompt</span></span>
+      <span class="pv-flow"><span></span><span></span><span></span></span>
+      <span class="pv-grid" id="pv-grid"></span>
+      <span class="pv-flow"><span></span><span></span><span></span></span>
+      <span class="pv-node pv-late">#a75e83…<span class="t">agreed bit-exact</span></span>
+      <span class="pv-flow"><span></span><span></span><span></span></span>
+      <span class="pv-node pv-late">⛓ 1 tx<span class="t">settled</span></span>
+    </div>
+    <p class="pv-cap">one inference → hash-committed segments across the operator committee
+      → bit-exact agreement → one on-chain settlement</p>
+  </div>
+  <script>
+    (function(){ const g = document.getElementById('pv-grid');
+      for (let i = 0; i < 24; i++) { const s = document.createElement('i');
+        s.style.animationDelay = (i * 0.16) + 's'; g.appendChild(s); } })();
+  </script>
 </section>
 
 <nav>
@@ -290,19 +369,31 @@
   <div class="steps">
     <div class="step"><span class="big">01</span><span class="n">Step 01 · Ask</span>
       <h4>Prompt → token ids</h4>
-      <p>Your question is tokenized in the browser with the model's exact byte-level BPE,
-      verified token-for-token against HuggingFace. The contract receives raw ids —
-      tokenization stays deterministic and auditable.</p></div>
+      <div class="sv">
+        <span class="pv-node">"what is…?"</span>
+        <span class="pv-flow"><span></span><span></span><span></span></span>
+        <span class="tokrow"><i>3838</i><i>374</i><i>33946</i><i>30</i></span>
+      </div>
+      <p class="cap">Byte-level BPE runs in your browser — the chain sees raw ids.</p></div>
     <div class="step"><span class="big">02</span><span class="n">Step 02 · Simulate</span>
       <h4>The quorum runs the model</h4>
-      <p>Operators execute billions to trillions of gas of integer-only transformer under
-      unbounded simulation — weights mounted as pinned code overlays, committed by one
-      32-byte manifest hash. Every honest operator computes a bit-identical result.</p></div>
+      <div class="sv">
+        <span class="op">OP·0<b><i></i></b></span>
+        <span class="op">OP·1<b><i></i></b></span>
+        <span class="op">OP·2<b><i></i></b></span>
+        <span class="agree">✓ bit-exact</span>
+      </div>
+      <p class="cap">Trillions of gas off-chain — every honest operator computes the
+      identical result.</p></div>
     <div class="step"><span class="big">03</span><span class="n">Step 03 · Settle</span>
       <h4>One signature on-chain</h4>
-      <p>The quorum BLS-signs the single-slot diff and <code>verifyAndUpdate</code> lands it
-      on Sepolia for ~384k gas — execution up to 99% cheaper, verified by aggregate
-      signature. Wrong results are slashable via bisection fraud proofs.</p></div>
+      <div class="sv">
+        <span class="gasbar big"><span>3.6T gas</span></span>
+        <span style="color:var(--dim)">→</span>
+        <span class="gasbar tiny"><span>384k</span></span>
+        <span class="pv-node">⛓ ✓</span>
+      </div>
+      <p class="cap">One BLS signature on Sepolia. Wrong results are slashable.</p></div>
   </div>
   <div class="row">
     <div class="col" style="flex:1.5 1 520px">
