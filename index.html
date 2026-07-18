@@ -438,7 +438,7 @@
         <h3>Connection</h3>
         <label>Gas Killer router</label>
         <input class="small" id="router" value="https://testnet.gaskiller.xyz">
-        <label>API key (gk_…) — needed to submit; reads work without it</label>
+        <label>API key (gk_…) — only for stories260K; Qwen needs no key</label>
         <input class="small" id="apikey" placeholder="gk_…" type="password">
         <label>Sepolia RPC</label>
         <input class="small" id="rpc" value="https://sepolia.drpc.org">
@@ -819,7 +819,8 @@ async function send(){
   }
 
   // ── stories: direct /trigger with the visitor's own gk_ API key ──
-  if (!key) { addMsg("sys", "no API key — reads only. Paste a gk_… key to submit tasks."); return; }
+  if (!key) { addMsg("sys", "stories260K needs a <b>gk_…</b> API key to submit (the Qwen models don't — " +
+    "they run keyless through the shard bridge). Paste a key in the Connection panel, or pick a Qwen model."); return; }
   if (!key.startsWith("gk_")) {
     addMsg("sys", "that doesn't look like an API key (expected <b>gk_…</b>). If you pasted the " +
       "<i>admin</i> key: it can't trigger tasks — it mints API keys via <code>/admin/keys</code> " +
