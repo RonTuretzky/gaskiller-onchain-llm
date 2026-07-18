@@ -176,6 +176,9 @@
   .step p { margin: 0; font-size: 12.5px; color: var(--dim); line-height: 1.65; }
   /* footer */
   footer { border-top: 2px solid var(--line); margin-top: 30px; padding: 26px 28px 40px; }
+  footer .fh { margin: 0 0 10px; font-size: 12.5px; color: var(--dim); font-weight: 600;
+    font-family: var(--display); font-style: italic; text-transform: uppercase;
+    letter-spacing: .3em; }
   footer .inner { max-width: 1060px; margin: 0 auto; display: flex; gap: 24px;
                   flex-wrap: wrap; align-items: center; justify-content: space-between; }
   footer .tagline { color: var(--dim); font-size: 13px; }
@@ -429,23 +432,6 @@
         <div id="history" class="note">loading events from Sepolia…</div>
       </div>
     </div>
-    <div class="col" style="flex:1 1 340px">
-      <div class="card">
-        <h3>Connection</h3>
-        <label>Gas Killer router</label>
-        <input class="small" id="router" value="https://testnet.gaskiller.xyz">
-        <label>Sepolia RPC</label>
-        <input class="small" id="rpc" value="https://sepolia.drpc.org">
-        <div class="note" style="margin-top:10px">No key, no wallet. Asks run through the shard
-        bridge; the operator quorum executes the inference off-chain, BLS-signs the single-slot
-        diff, and lands it via <code>verifyAndUpdate</code>. Reads (history, state) go straight
-        to the chain. The answer appears here when the event hits Sepolia.</div>
-      </div>
-      <div class="card">
-        <h3>Contracts (Sepolia)</h3>
-        <div class="kv" id="contracts"></div>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -531,6 +517,12 @@
 </main>
 
 <footer>
+  <div class="inner" style="margin-bottom:22px">
+    <div style="width:100%">
+      <h3 class="fh">Contracts (Sepolia)</h3>
+      <div class="kv" id="contracts"></div>
+    </div>
+  </div>
   <div class="inner">
     <div class="tagline">
       <b>Gas Killer</b> — cheaper, safer smart contracts without rewriting them.<br>
@@ -616,7 +608,7 @@ let routerBase = null;
 async function routerFetch(path, opts){
   const bases = [];
   if (routerBase) bases.push(routerBase);
-  for (const b of [$("router").value.trim(), ROUTER_RELAY]) if (!bases.includes(b)) bases.push(b);
+  for (const b of [ROUTER_URL, ROUTER_RELAY]) if (!bases.includes(b)) bases.push(b);
   let lastErr;
   for (const b of bases) {
     try {
@@ -627,7 +619,8 @@ async function routerFetch(path, opts){
   }
   throw lastErr;
 }
-const rpcUrl = () => $("rpc").value.trim();
+const ROUTER_URL = "https://testnet.gaskiller.xyz";
+const rpcUrl = () => "https://sepolia.drpc.org";
 const hex = n => "0x" + n.toString(16);
 const RPC_FALLBACKS = ["https://sepolia.drpc.org", "https://sepolia.gateway.tenderly.co", "https://rpc.sepolia.org"];
 async function rpc(method, params) {
