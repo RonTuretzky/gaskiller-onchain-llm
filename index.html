@@ -407,14 +407,10 @@
             <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
             <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens · <b>≈4 min sharded</b> — ~2 min inference across the committee + one BLS settlement round</div>
           </button>
-          <button id="pick-stories" class="on" onclick="pickModel('stories')">
-            <span class="name">stories260K <span class="pill live">LIVE</span></span>
-            <div class="meta">Llama-2 · 260K params · weights fully on-chain · ~1.4B gas / 32 tokens · <b>≈1 min per story</b> · <span style="color:var(--acc2)">children's stories only</span></div>
-          </button>
         </div>
         <div id="chatlog"></div>
         <div class="inbar">
-          <input type="text" id="prompt" placeholder="Once upon a time" value="Once upon a time">
+          <input type="text" id="prompt" placeholder="Ask Qwen anything…" value="What is Ethereum?">
           <button class="btn" id="send" onclick="send()">Ask the chain</button>
         </div>
         <div class="note" style="margin-top:8px" id="chat-note"></div>
@@ -438,14 +434,12 @@
         <h3>Connection</h3>
         <label>Gas Killer router</label>
         <input class="small" id="router" value="https://testnet.gaskiller.xyz">
-        <label>API key (gk_…) — only for stories260K; Qwen needs no key</label>
-        <input class="small" id="apikey" placeholder="gk_…" type="password">
         <label>Sepolia RPC</label>
         <input class="small" id="rpc" value="https://sepolia.drpc.org">
-        <div class="note" style="margin-top:10px">Reads (history, state) go straight to the chain.
-        Submitting a prompt POSTs a task to the router; the operator quorum simulates the
-        billion-gas inference off-chain, BLS-signs the single-slot diff, and lands it via
-        <code>verifyAndUpdate</code>. The answer appears here when the event hits Sepolia.</div>
+        <div class="note" style="margin-top:10px">No key, no wallet. Asks run through the shard
+        bridge; the operator quorum executes the inference off-chain, BLS-signs the single-slot
+        diff, and lands it via <code>verifyAndUpdate</code>. Reads (history, state) go straight
+        to the chain. The answer appears here when the event hits Sepolia.</div>
       </div>
       <div class="card">
         <h3>Contracts (Sepolia)</h3>
@@ -462,17 +456,16 @@
     <div class="note">
       Every Gas Killer result is signed by a quorum, and every honest operator computes a
       <b>bit-identical</b> integer inference. If a signed result is ever wrong, a challenger
-      doesn't re-execute 1.4B gas on-chain — that's impossible. Instead the execution is
+      doesn't re-execute billions of gas on-chain — that's impossible. Instead the execution is
       checkpointed at every generated token (the commitment chain the contract already
       maintains), and challenger + defender <b>bisect</b>: compare the midpoint checkpoint,
       recurse into the half that disagrees, and after ⌈log₂ n⌉ rounds isolate <b>one token's
-      forward pass</b> — small enough to re-execute inside the SP1 slashing guest (or even
-      on-chain for the 260K model). The fraud is proven at the first divergent step; the
-      dishonest party is slashed. This lab simulates the whole game.
+      forward pass</b> — small enough to re-execute inside the SP1 slashing guest. The fraud
+      is proven at the first divergent step; the dishonest party is slashed. This lab
+      simulates the whole game.
     </div>
     <div class="controls">
       <select id="lab-model" onchange="labSetup()">
-        <option value="stories">stories260K · 32 tokens · ~44M gas/token</option>
         <option value="qwen">Qwen3-0.6B · 8 tokens + 16 prefill · ~28.6B gas/token</option>
         <option value="big">Qwen3-0.6B long · 64 segments</option>
       </select>
@@ -517,8 +510,7 @@
           (<code>0x23216c…7ae9</code> for Qwen). A defender who simulated with different
           weights diverges at segment 0 and is slashed immediately: availability games
           can't forge the manifest.<br><br>
-          <b>The endgame is tiny.</b> One stories260K token ≈ 44M gas — provable by direct
-          on-chain re-execution. One Qwen token ≈ 28.6B gas — still 50,000× smaller than
+          <b>The endgame is tiny.</b> One Qwen token ≈ 28.6B gas — 50,000× smaller than
           the naive dispute, and exactly the workload the SP1 guest re-executes to produce
           a fraud proof bound to <code>chainConfigHash</code>.<br><br>
           <b>Honest defenders can't lose.</b> Try the honest mode: every midpoint matches,
@@ -607,7 +599,7 @@ const C = {
   // RPC, so fresh head-3 heights work. Qwen traces need the overlay fork (weights
   // mounted as phantom code); its current head is served at <router>/forkhead.
 };
-let model = "stories";
+let model = "qwen";
 
 /* =================== tiny helpers =================== */
 const $ = id => document.getElementById(id);
@@ -726,34 +718,20 @@ function ensureTokenizer(m){
 }
 function pickModel(m){
   model = m;
-  $("pick-stories").classList.toggle("on", m==="stories");
   $("pick-qwen").classList.toggle("on", m==="qwen");
   $("pick-qwen35").classList.toggle("on", m==="qwen35");
-  if (isQwen(m)) {
-    $("prompt").placeholder = "Ask Qwen anything…";
-    $("prompt").value = "What is Ethereum?";
-    ensureTokenizer(m).then(() => loadHistory());   // decode question texts once ready
-  } else {
-    $("prompt").placeholder = "Once upon a time";
-    $("prompt").value = "Once upon a time";
-  }
+  $("prompt").placeholder = "Ask Qwen anything…";
+  ensureTokenizer(m).then(() => loadHistory());   // decode question texts once ready
   $("chat-note").innerHTML = m==="qwen"
-    ? "Ask anything — your question is tokenized <b>in your browser</b> (same byte-level BPE as the " +
-      "model, verified token-for-token vs HuggingFace) and the contract receives raw token ids; the " +
-      "answer text is decoded fully on-chain. <b>≈4 min per answer</b> — the inference runs as " +
-      "hash-committed <b>sharded segments across the operator committee</b> (~2 min), then one " +
-      "BLS-quorum settlement lands it on Sepolia. <b>Answers are capped at 8 tokens</b> (~a short " +
-      "sentence): each token costs the operator quorum ~28.6B gas of transformer, so one round buys a " +
-      "headline, not an essay."
-    : m==="qwen35"
-    ? "Ask anything — 35 billion parameters answering on Ethereum. The operator quorum executes " +
-      "~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — <b>≈75 min " +
-      "sharded</b> across the committee, then one BLS-quorum settlement lands it on Sepolia. " +
-      "Answers capped at 8 tokens. Tokenized in your browser; weights committed on-chain as a " +
-      "single 32-byte manifest (0x7bdf4876…)."
-    : "stories260K tokenizes fully on-chain — type anything. Greedy decoding: same prompt ⇒ same story, " +
-      "verifiable by every operator. Settles in ~1 min. (It only speaks children's-story — it's the " +
-      "mechanism demo; use Qwen for real questions.)";
+    ? "Ask anything — no key, no wallet. Your question is tokenized <b>in your browser</b> (same " +
+      "byte-level BPE as the model, verified token-for-token vs HuggingFace); the contract receives " +
+      "raw token ids. <b>≈4 min per answer</b> — hash-committed <b>sharded segments across the " +
+      "operator committee</b> (~2 min), then one BLS-quorum settlement on Sepolia. <b>Answers are " +
+      "capped at 8 tokens</b> (~a headline): each token costs the quorum ~28.6B gas of transformer."
+    : "Ask anything — 35 billion parameters answering on Ethereum, no key needed. The operator quorum " +
+      "executes ~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — " +
+      "<b>≈75 min sharded</b> across the committee, then one BLS-quorum settlement on Sepolia. " +
+      "Answers capped at 8 tokens. Weights committed on-chain as a single 32-byte manifest (0x7bdf4876…).";
   loadHistory();
 }
 function addMsg(cls, html){
@@ -769,8 +747,7 @@ async function transitions(addr){
 }
 async function send(){
   const cfg = C[model];
-  const prompt = $("prompt").value.trim() || "Once upon a time";
-  const key = $("apikey").value.trim();
+  const prompt = $("prompt").value.trim();
   // tokenize the Qwen question in-browser (with the model's own BPE instance)
   let qwenIds = null, qwenText = null;
   if (isQwen(model)) {
@@ -818,36 +795,6 @@ async function send(){
     return;
   }
 
-  // ── stories: direct /trigger with the visitor's own gk_ API key ──
-  if (!key) { addMsg("sys", "stories260K needs a <b>gk_…</b> API key to submit (the Qwen models don't — " +
-    "they run keyless through the shard bridge). Paste a key in the Connection panel, or pick a Qwen model."); return; }
-  if (!key.startsWith("gk_")) {
-    addMsg("sys", "that doesn't look like an API key (expected <b>gk_…</b>). If you pasted the " +
-      "<i>admin</i> key: it can't trigger tasks — it mints API keys via <code>/admin/keys</code> " +
-      "(not on the public ingress; port-forward the router).");
-    return;
-  }
-  $("send").disabled = true;
-  const wait = addMsg("sys", "submitting task to the router…");
-  try {
-    const [ti, blk] = await Promise.all([transitions(cfg.addr), rpc("eth_blockNumber", [])]);
-    const height = parseInt(blk, 16) - 3;
-    const cd = encTellStory(prompt, 32);
-    const body = { body: { target_address: cfg.addr, call_data: calldataBytes(cd),
-      transition_index: ti, from_address: C.from, value: "0",
-      block_height: height }};
-    const r = await routerFetch("/trigger", { method:"POST",
-      headers: {"Content-Type":"application/json", "Authorization":"Bearer "+key},
-      body: JSON.stringify(body) });
-    const jt = await r.text();
-    if (!r.ok) throw new Error("router " + r.status + ": " + jt);
-    wait.innerHTML = "task queued ✓ — watch the <b>Round in progress</b> card; the answer posts here when it settles.";
-    startRound({ model, ti, t0: Date.now() });
-  } catch(e) {
-    wait.innerHTML = "✗ " + esc(String(e.message||e)) +
-      (String(e).includes("Failed to fetch") ? " — likely CORS on the router; use curl or a proxy." : "");
-  }
-  $("send").disabled = false;
 }
 
 /* =================== round watcher (persistent processing indicator) =================== */
@@ -1004,7 +951,6 @@ async function loadHistory(announceNew){
 }
 async function initChat(){
   $("contracts").innerHTML =
-    `<b>stories260K</b> consumer <span class="addr">${C.stories.addr}</span><br>` +
     `<b>Qwen3-0.6B</b> consumer <span class="addr">${C.qwen.addr}</span><br>` +
     `<b>Qwen3.5-35B-A3B</b> consumer <span class="addr">${C.qwen35.addr}</span><br>` +
     `shared engine <span class="addr">${C.engine.toLowerCase()}</span><br>` +
