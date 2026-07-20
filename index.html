@@ -218,6 +218,10 @@
     font-family: inherit; transition: all .12s ease; }
   .inbar input[type=text]:focus { outline: none; border-color: var(--acc);
     box-shadow: 3px 3px 0 var(--ink-acc); }
+  .inbar select { background: var(--panel2); color: var(--text); font-family: var(--mono);
+    font-size: 12px; border: 2px solid var(--line2); border-radius: 0; padding: 0 10px;
+    cursor: pointer; }
+  .inbar select:focus { outline: none; border-color: var(--acc); }
   /* kit LiftedButton: solid base shadow, presses flush on :active */
   .btn { background: var(--acc); color: #022c22; font-weight: 700;
          border: 2px solid #022c22;
@@ -414,6 +418,7 @@
         <div id="chatlog"></div>
         <div class="inbar">
           <input type="text" id="prompt" placeholder="Ask Qwen anything…" value="What is Ethereum?">
+          <select id="maxtok" title="response length (tokens)"></select>
           <button class="btn" id="send" onclick="send()">Ask the chain</button>
         </div>
         <div class="note" style="margin-top:8px" id="chat-note"></div>
@@ -714,17 +719,22 @@ function pickModel(m){
   $("pick-qwen").classList.toggle("on", m==="qwen");
   $("pick-qwen35").classList.toggle("on", m==="qwen35");
   $("prompt").placeholder = "Ask Qwen anything…";
+  // response-length choices per model (default 8)
+  $("maxtok").innerHTML = TOK_CHOICES[m]
+    .map(t => `<option value="${t}"${t===8?" selected":""}>${t} tok</option>`).join("");
   ensureTokenizer(m).then(() => loadHistory());   // decode question texts once ready
   $("chat-note").innerHTML = m==="qwen"
     ? "Ask anything — no key, no wallet. Your question is tokenized <b>in your browser</b> (same " +
       "byte-level BPE as the model, verified token-for-token vs HuggingFace); the contract receives " +
-      "raw token ids. <b>≈4 min per answer</b> — hash-committed <b>sharded segments across the " +
-      "operator committee</b> (~2 min), then one BLS-quorum settlement on Sepolia. <b>Answers are " +
-      "capped at 8 tokens</b> (~a headline): each token costs the quorum ~28.6B gas of transformer."
+      "raw token ids. <b>≈4 min for an 8-token answer</b> — hash-committed <b>sharded segments " +
+      "across the operator committee</b>, then one BLS-quorum settlement on Sepolia. <b>Pick your " +
+      "response length</b> (up to 24 tokens) next to the ask button — each token costs the quorum " +
+      "~28.6B gas of transformer, so longer answers take proportionally longer."
     : "Ask anything — 35 billion parameters answering on Ethereum, no key needed. The operator quorum " +
       "executes ~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — " +
-      "<b>≈75 min sharded</b> across the committee, then one BLS-quorum settlement on Sepolia. " +
-      "Answers capped at 8 tokens. Weights committed on-chain as a single 32-byte manifest (0x7bdf4876…).";
+      "<b>≈75 min for an 8-token answer</b> sharded across the committee, then one BLS-quorum " +
+      "settlement on Sepolia. <b>Pick your response length</b> (2–8 tokens — each 35B token is " +
+      "minutes of committee compute). Weights committed on-chain as a single 32-byte manifest (0x7bdf4876…).";
   loadHistory();
 }
 function addMsg(cls, html){
@@ -768,18 +778,25 @@ async function send(){
   // committee (native fast executor), then submits ONE gate-verified fulfil()
   // settlement round. We watch the chain for the on-chain landing, same as stories.
   if (isQwen(model)) {
+    const maxTok = parseInt($("maxtok").value, 10) || 8;
+    if (model === "qwen35" && qwenIds.length + maxTok > 64) {
+      addMsg("sys", "prompt (" + qwenIds.length + " ids) + response (" + maxTok + ") exceeds the " +
+        "35B's 64-token sequence cap — shorten the question or pick a shorter response.");
+      return;
+    }
     $("send").disabled = true;
-    const wait = addMsg("sys", "starting <b>sharded</b> inference across the operator committee…");
+    const wait = addMsg("sys", "starting <b>sharded</b> inference across the operator committee " +
+      "(" + maxTok + "-token response)…");
     try {
       const ti = await transitions(cfg.addr);
       const r = await fetch(BRIDGE + "/bridge/ask", { method:"POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ model, prompt_ids: qwenIds, max_new: 8 }) });
+        body: JSON.stringify({ model, prompt_ids: qwenIds, max_new: maxTok }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || ("bridge HTTP " + r.status));
       wait.innerHTML = "sharded round started ✓ — segments run across the committee, then <b>one</b> " +
         "on-chain settlement. Watch the <b>Round in progress</b> card; the answer posts here when it lands.";
-      startRound({ model, ti, t0: Date.now(), askId: j.ask_id });
+      startRound({ model, ti, t0: Date.now(), askId: j.ask_id, tokens: maxTok });
     } catch(e) {
       wait.innerHTML = "✗ " + esc(String(e.message||e)) +
         (String(e).includes("Failed to fetch") ? " — bridge unreachable (CORS or ingress)." : "");
@@ -799,8 +816,18 @@ async function send(){
 // Sharded path, measured live end-to-end through the bridge: 0.6B ≈2 min
 // committee inference + ~1 min BLS settlement; 35B ≈74 min + settlement.
 // MAX allows one-time cold daemon warmup.
-const ROUND_EXPECT = { stories: 60e3, qwen: 4*60e3, qwen35: 75*60e3 };
-const ROUND_MAX    = { stories: 10*60e3, qwen: 30*60e3, qwen35: 180*60e3 };
+// Response length is user-configurable; ETAs scale with it from the measured
+// 8-token baselines (0.6B ≈4 min, 35B ≈75 min): a fixed prefill+settle floor
+// plus a per-token decode cost.
+const TOK_CHOICES = { qwen: [4, 8, 16, 24], qwen35: [2, 4, 8] };
+function roundExpect(model, toks) {
+  const t = toks || 8;
+  return model === "qwen35" ? 30*60e3 + t*5.6*60e3   // 8 -> ~75 min
+                            : 90e3 + t*20e3;          // 8 -> ~4.2 min
+}
+function roundMax(model, toks) {
+  return model === "qwen35" ? 2.5*roundExpect(model, toks) : 6*roundExpect(model, toks);
+}
 let watchTimer = null, healthTimer = null;
 
 function roundState(){ try { return JSON.parse(localStorage.getItem("gk-round")); } catch(e){ return null; } }
@@ -840,7 +867,8 @@ function watchRound(){
   const cfg = C[st.model];
   $("roundcard").style.display = "";
   $("rc-model").textContent = cfg.label;
-  $("rc-expect").textContent = "· expect ~" + fmtDur(ROUND_EXPECT[st.model]);
+  const rcExpect = roundExpect(st.model, st.tokens), rcMax = roundMax(st.model, st.tokens);
+  $("rc-expect").textContent = "· expect ~" + fmtDur(rcExpect);
   pollHealth(); healthTimer = setInterval(pollHealth, 30e3);
   let busy = false, realFrac = null;   // realFrac: measured segment progress from the bridge
   const tick = async () => {
@@ -849,9 +877,9 @@ function watchRound(){
     // real segment progress when the bridge reports it; otherwise creep toward
     // 93% over the expected duration, then hold (indeterminate tail)
     const frac = realFrac !== null ? realFrac
-               : Math.min(0.93, 0.02 + 0.91 * el / ROUND_EXPECT[st.model]);
+               : Math.min(0.93, 0.02 + 0.91 * el / rcExpect);
     $("rc-fill").style.width = (frac*100).toFixed(1) + "%";
-    $("rc-pbar").classList.toggle("indet", realFrac === null && el > ROUND_EXPECT[st.model]);
+    $("rc-pbar").classList.toggle("indet", realFrac === null && el > rcExpect);
     paintStages(frac, false);
     if (busy || el % 12e3 > 3e3) return;   // chain poll every ~12s, timer every 3s
     busy = true;
@@ -888,8 +916,8 @@ function watchRound(){
         initChat();
         return;
       }
-      if (el > ROUND_MAX[st.model]) {
-        $("rc-healthtext").textContent = "round exceeded the "+fmtDur(ROUND_MAX[st.model])+" window — likely timed out";
+      if (el > rcMax) {
+        $("rc-healthtext").textContent = "round exceeded the "+fmtDur(rcMax)+" window — likely timed out";
         clearInterval(watchTimer);
       }
     } catch(e) { /* transient RPC failure; next tick retries */ }
