@@ -199,8 +199,15 @@
     box-shadow: 4px 4px 0 var(--ink-acc); }
   .modelpick .name { font-weight: 700; font-size: 14px; font-family: var(--display); }
   .modelpick .meta { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.55; }
+  /* shown above the ask form when the picked model isn't taking new asks */
+  .offbanner { margin-top: 12px; padding: 10px 14px; font-size: 13px; color: var(--warn);
+    background: #1a1408; border: 1.5px solid #5a4418; border-left: 3px solid var(--warn);
+    box-shadow: 3px 3px 0 var(--ink); line-height: 1.6; }
+  .offbanner b { color: #fcd34d; }
   #chatlog { min-height: 260px; max-height: 460px; overflow-y: auto; display: flex;
              flex-direction: column; gap: 10px; padding: 4px 2px; }
+  /* before the first message there's nothing to reserve room for */
+  #chatlog:empty { min-height: 0; padding: 0; }
   .msg { max-width: 88%; padding: 10px 14px; border-radius: 0; font-size: 14px;
          white-space: pre-wrap; word-break: break-word; }
   .msg.user { align-self: flex-end; background: #052e21; border: 1.5px solid #10604a;
@@ -251,6 +258,7 @@
           letter-spacing: .06em; border: 1px solid transparent; }
   .pill.live { background: #12331f; color: var(--good); border-color: #1e5a37; }
   .pill.wait { background: #33270f; color: var(--warn); border-color: #5a4418; }
+  .pill.off  { background: #2a1215; color: var(--bad); border-color: #5c2327; }
   .story { border: 1.5px solid var(--line); border-left: 3px solid var(--acc);
            padding: 10px 14px; margin: 10px 0;
            background: var(--panel2); border-radius: 0; font-size: 13.5px;
@@ -407,7 +415,7 @@
       <div class="card">
         <div class="modelpick">
           <button id="pick-qwen35" onclick="pickModel('qwen35')">
-            <span class="name">Qwen3.5-35B-A3B <span class="pill wait" id="qwen35-pill">CHECKING…</span></span>
+            <span class="name">Qwen3.5-35B-A3B <span class="pill off" id="qwen35-pill">OFFLINE</span></span>
             <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · <b>≈75 min sharded</b> across the operator committee · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
@@ -416,6 +424,9 @@
           </button>
         </div>
         <div id="chatlog"></div>
+        <div class="offbanner" id="offbanner" style="display:none">Demand for 35B rounds is too high
+          right now — the operator committee is saturated, so new asks are <b>paused</b>. Past answers
+          stay on-chain and browsable below; switch to Qwen3-0.6B to ask a question.</div>
         <div class="inbar">
           <input type="text" id="prompt" placeholder="Ask Qwen anything…" value="What is Ethereum?">
           <select id="maxtok" title="response length (tokens)"></select>
@@ -651,6 +662,11 @@ function tab(t) {
 }
 function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
 const isQwen = m => m === "qwen" || m === "qwen35";
+// Models the demo won't take new asks for: the tab still opens and its on-chain
+// history stays browsable, but the ask button is disabled and a banner explains
+// why. Re-enable a model by removing it from this list.
+const OFFLINE_MODELS = ["qwen35"];
+const isOffline = m => OFFLINE_MODELS.includes(m);
 
 /* ---- minimal ABI decoding (enough for our two events) ---- */
 function word(data, i){ return data.slice(2 + i*64, 2 + (i+1)*64); }
@@ -719,6 +735,9 @@ function pickModel(m){
   $("pick-qwen").classList.toggle("on", m==="qwen");
   $("pick-qwen35").classList.toggle("on", m==="qwen35");
   $("prompt").placeholder = "Ask Qwen anything…";
+  // Offline models still open — history stays browsable; only asking is off.
+  $("offbanner").style.display = isOffline(m) ? "" : "none";
+  $("send").disabled = isOffline(m);
   // response-length choices per model (default 8)
   $("maxtok").innerHTML = TOK_CHOICES[m]
     .map(t => `<option value="${t}"${t===8?" selected":""}>${t} tok</option>`).join("");
@@ -730,11 +749,11 @@ function pickModel(m){
       "across the operator committee</b>, then one BLS-quorum settlement on Sepolia. <b>Pick your " +
       "response length</b> (up to 24 tokens) next to the ask button — each token costs the quorum " +
       "~28.6B gas of transformer, so longer answers take proportionally longer."
-    : "Ask anything — 35 billion parameters answering on Ethereum, no key needed. The operator quorum " +
-      "executes ~3.6 TRILLION gas of hybrid DeltaNet + mixture-of-experts inference per answer — " +
-      "<b>≈75 min for an 8-token answer</b> sharded across the committee, then one BLS-quorum " +
-      "settlement on Sepolia. <b>Pick your response length</b> (2–8 tokens — each 35B token is " +
-      "minutes of committee compute). Weights committed on-chain as a single 32-byte manifest (0x7bdf4876…).";
+    : "35 billion parameters answering on Ethereum. The operator quorum executes ~3.6 TRILLION gas " +
+      "of hybrid DeltaNet + mixture-of-experts inference per answer — <b>≈75 min for an 8-token " +
+      "answer</b> sharded across the committee, then one BLS-quorum settlement on Sepolia. Each 35B " +
+      "token is minutes of committee compute. Weights committed on-chain as a single 32-byte " +
+      "manifest (0x7bdf4876…). Every round below landed on Sepolia — browse them while asks are paused.";
   loadHistory();
 }
 function addMsg(cls, html){
@@ -749,6 +768,7 @@ async function transitions(addr){
   return parseInt(r, 16);
 }
 async function send(){
+  if (isOffline(model)) return;   // button is disabled too; this is the belt-and-braces path
   const cfg = C[model];
   const prompt = $("prompt").value.trim();
   // tokenize the Qwen question in-browser (with the model's own BPE instance)
@@ -801,7 +821,7 @@ async function send(){
       wait.innerHTML = "✗ " + esc(String(e.message||e)) +
         (String(e).includes("Failed to fetch") ? " — bridge unreachable (CORS or ingress)." : "");
     }
-    $("send").disabled = false;
+    $("send").disabled = isOffline(model);   // `model` may have changed while awaiting
     return;
   }
 
@@ -982,12 +1002,9 @@ async function initChat(){
     const t = await transitions(C.qwen.addr);
     $("qwen-pill").textContent = t > 0 ? "LIVE" : "AWAITING OPERATORS";
     $("qwen-pill").className = "pill " + (t > 0 ? "live" : "wait");
-  } catch(e){ $("qwen-pill").textContent = "OFFLINE"; }
-  try {
-    const t = await transitions(C.qwen35.addr);
-    $("qwen35-pill").textContent = t > 0 ? "LIVE" : "AWAITING OPERATORS";
-    $("qwen35-pill").className = "pill " + (t > 0 ? "live" : "wait");
-  } catch(e){ $("qwen35-pill").textContent = "OFFLINE"; }
+  } catch(e){ $("qwen-pill").textContent = "OFFLINE"; $("qwen-pill").className = "pill off"; }
+  // qwen35's pill is pinned OFFLINE in the markup while 35B asks are paused, so
+  // there's no live status to check for it (see OFFLINE_MODELS).
 }
 
 /* =================== bisection lab =================== */
