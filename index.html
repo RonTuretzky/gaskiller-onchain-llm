@@ -204,6 +204,7 @@
     background: #1a1408; border: 1.5px solid #5a4418; border-left: 3px solid var(--warn);
     box-shadow: 3px 3px 0 var(--ink); line-height: 1.6; }
   .offbanner b { color: #fcd34d; }
+  .offbanner a { color: #fcd34d; text-decoration: underline; }
   #chatlog { min-height: 260px; max-height: 460px; overflow-y: auto; display: flex;
              flex-direction: column; gap: 10px; padding: 4px 2px; }
   /* before the first message there's nothing to reserve room for */
@@ -229,6 +230,8 @@
     font-size: 12px; border: 2px solid var(--line2); border-radius: 0; padding: 0 10px;
     cursor: pointer; }
   .inbar select:focus { outline: none; border-color: var(--acc); }
+  /* whole ask form goes dead while the picked model is offline */
+  .inbar :disabled { opacity: .45; cursor: default; }
   /* kit LiftedButton: solid base shadow, presses flush on :active */
   .btn { background: var(--acc); color: #022c22; font-weight: 700;
          border: 2px solid #022c22;
@@ -419,14 +422,18 @@
             <div class="meta">35B params (3B active MoE) · hybrid DeltaNet attention · ~3.6T gas / 8 tokens · <b>≈75 min sharded</b> across the operator committee · <span style="color:var(--acc2)">the largest model ever run on a blockchain</span></div>
           </button>
           <button id="pick-qwen" onclick="pickModel('qwen')">
-            <span class="name">Qwen3-0.6B <span class="pill wait" id="qwen-pill">CHECKING…</span></span>
+            <span class="name">Qwen3-0.6B <span class="pill off" id="qwen-pill">OFFLINE</span></span>
             <div class="meta">596M params · overlay weights (32-byte manifest on-chain) · ~545B gas / 8 tokens · <b>≈4 min sharded</b> — ~2 min inference across the committee + one BLS settlement round</div>
           </button>
         </div>
         <div id="chatlog"></div>
-        <div class="offbanner" id="offbanner" style="display:none">Demand for 35B rounds is too high
-          right now — the operator committee is saturated, so new asks are <b>paused</b>. Past answers
-          stay on-chain and browsable below; switch to Qwen3-0.6B to ask a question.</div>
+        <div class="offbanner" id="offbanner" style="display:none">This model is <b>disabled</b> for
+          now while we work on updating the system. Past answers stay on-chain and browsable below.
+          Learn more about the experiment in
+          <a target="_blank" href="https://paragraph.com/@gaskiller/we-put-a-language-model-on-chain">this
+          blog post ↗</a>, and join us in the
+          <a target="_blank" href="https://t.me/gaskillerfriends">Gas Killer Telegram ↗</a> for updates
+          and discussion.</div>
         <div class="inbar">
           <input type="text" id="prompt" placeholder="Ask Qwen anything…" value="What is Ethereum?">
           <select id="maxtok" title="response length (tokens)"></select>
@@ -665,7 +672,7 @@ const isQwen = m => m === "qwen" || m === "qwen35";
 // Models the demo won't take new asks for: the tab still opens and its on-chain
 // history stays browsable, but the ask button is disabled and a banner explains
 // why. Re-enable a model by removing it from this list.
-const OFFLINE_MODELS = ["qwen35"];
+const OFFLINE_MODELS = ["qwen35", "qwen"];
 const isOffline = m => OFFLINE_MODELS.includes(m);
 
 /* ---- minimal ABI decoding (enough for our two events) ---- */
@@ -737,18 +744,18 @@ function pickModel(m){
   $("prompt").placeholder = "Ask Qwen anything…";
   // Offline models still open — history stays browsable; only asking is off.
   $("offbanner").style.display = isOffline(m) ? "" : "none";
-  $("send").disabled = isOffline(m);
+  $("send").disabled = $("prompt").disabled = $("maxtok").disabled = isOffline(m);
   // response-length choices per model (default 8)
   $("maxtok").innerHTML = TOK_CHOICES[m]
     .map(t => `<option value="${t}"${t===8?" selected":""}>${t} tok</option>`).join("");
   ensureTokenizer(m).then(() => loadHistory());   // decode question texts once ready
   $("chat-note").innerHTML = m==="qwen"
-    ? "Ask anything — no key, no wallet. Your question is tokenized <b>in your browser</b> (same " +
-      "byte-level BPE as the model, verified token-for-token vs HuggingFace); the contract receives " +
-      "raw token ids. <b>≈4 min for an 8-token answer</b> — hash-committed <b>sharded segments " +
-      "across the operator committee</b>, then one BLS-quorum settlement on Sepolia. <b>Pick your " +
-      "response length</b> (up to 24 tokens) next to the ask button — each token costs the quorum " +
-      "~28.6B gas of transformer, so longer answers take proportionally longer."
+    ? "596 million parameters answering on Ethereum, no key and no wallet. Questions are tokenized " +
+      "<b>in the browser</b> (same byte-level BPE as the model, verified token-for-token vs " +
+      "HuggingFace); the contract receives raw token ids. <b>≈4 min for an 8-token answer</b> — " +
+      "hash-committed <b>sharded segments across the operator committee</b>, then one BLS-quorum " +
+      "settlement on Sepolia, at ~28.6B gas of transformer per token. Every round below landed on " +
+      "Sepolia — browse them while asks are paused."
     : "35 billion parameters answering on Ethereum. The operator quorum executes ~3.6 TRILLION gas " +
       "of hybrid DeltaNet + mixture-of-experts inference per answer — <b>≈75 min for an 8-token " +
       "answer</b> sharded across the committee, then one BLS-quorum settlement on Sepolia. Each 35B " +
@@ -998,13 +1005,17 @@ async function initChat(){
     `overlay manifest <span class="addr">${C.manifest.slice(0,20)}…</span><br>` +
     `<a target="_blank" style="color:var(--acc)" href="https://github.com/gas-killer/solidity-sdk/releases/tag/qwen3-0.6b-onchain-v1">pinned weight artifacts ↗</a>`;
   pickModel("qwen");
-  try {
-    const t = await transitions(C.qwen.addr);
-    $("qwen-pill").textContent = t > 0 ? "LIVE" : "AWAITING OPERATORS";
-    $("qwen-pill").className = "pill " + (t > 0 ? "live" : "wait");
-  } catch(e){ $("qwen-pill").textContent = "OFFLINE"; $("qwen-pill").className = "pill off"; }
-  // qwen35's pill is pinned OFFLINE in the markup while 35B asks are paused, so
-  // there's no live status to check for it (see OFFLINE_MODELS).
+  // Offline models keep the OFFLINE pill pinned from the markup — there's no live
+  // status worth checking while asks are paused. Drop a model from OFFLINE_MODELS
+  // and its pill goes back to reflecting on-chain state.
+  await Promise.all(["qwen", "qwen35"].filter(m => !isOffline(m)).map(async m => {
+    const pill = $(m + "-pill");
+    try {
+      const t = await transitions(C[m].addr);
+      pill.textContent = t > 0 ? "LIVE" : "AWAITING OPERATORS";
+      pill.className = "pill " + (t > 0 ? "live" : "wait");
+    } catch(e){ pill.textContent = "OFFLINE"; pill.className = "pill off"; }
+  }));
 }
 
 /* =================== bisection lab =================== */
